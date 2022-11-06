@@ -10,19 +10,21 @@ namespace FGPRS
 {
 	class MyContext
 	{
-		private:
-		CUexecAffinityParam_v1 _affinity;
+		public:
 		CUcontext _context;
+		bool _default;
 
 		public:
 		bool busy = false;
 		unsigned smCount;
+		unsigned long queueDuration;
 
+		MyContext();
 		MyContext(unsigned);
 		bool initialize();
-		bool select();
+		bool select(double duration);
 		static bool selectDefault();
-		bool release();
+		bool release(double duration);
 		bool destroy();
 	};
 }

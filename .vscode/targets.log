@@ -1,6 +1,4 @@
 make all --print-data-base --no-builtin-variables --no-builtin-rules --question
-make: *** No rule to make target 'all'.  Stop.
-
 # GNU Make 4.2.1
 # Built for x86_64-pc-linux-gnu
 # Copyright (C) 1988-2016 Free Software Foundation, Inc.
@@ -8,7 +6,7 @@ make: *** No rule to make target 'all'.  Stop.
 # This is free software: you are free to change and redistribute it.
 # There is NO WARRANTY, to the extent permitted by law.
 
-# Make data base, printed on Sat May  7 17:30:09 2022
+# Make data base, printed on Sun Aug 21 17:57:34 2022
 
 # Variables
 
@@ -28,14 +26,12 @@ XDG_SESSION_CLASS = user
 SNAP_COMMON = /var/snap/code/common
 # environment
 XDG_SESSION_TYPE = x11
-# environment
-VSCODE_LOG_NATIVE = false
 # automatic
 ?D = $(patsubst %/,%,$(dir $?))
 # environment
 IM_CONFIG_PHASE = 1
 # environment
-PLATFORMIO_IDE = 2.4.3
+PLATFORMIO_IDE = 2.5.2
 # automatic
 @D = $(patsubst %/,%,$(dir $@))
 # environment
@@ -49,11 +45,11 @@ CURDIR := /home/amir/repos/FGPRS
 # makefile
 SHELL = /bin/sh
 # environment
-SNAP_DATA = /var/snap/code/95
+SNAP_DATA = /var/snap/code/105
 # environment
 VSCODE_NLS_CONFIG = {"locale":"en-us","availableLanguages":{},"_languagePackSupport":true}
 # environment
-JOURNAL_STREAM = 8:41349
+JOURNAL_STREAM = 8:32616
 # environment
 XDG_CONFIG_DIRS = /etc/xdg/xdg-ubuntu:/etc/xdg
 # environment
@@ -75,17 +71,15 @@ XDG_DATA_DIRS = /usr/share/ubuntu:/usr/local/share/:/usr/share/:/var/lib/snapd/d
 # environment
 DBUS_SESSION_BUS_ADDRESS = unix:path=/run/user/1000/bus
 # environment
-VSCODE_VERBOSE_LOGGING = true
+_ = /snap/code/105/usr/share/code/code
 # environment
-_ = /snap/code/95/usr/share/code/code
-# environment
-MANAGERPID = 2054
+MANAGERPID = 1994
 # environment
 LESSOPEN = | /usr/bin/lesspipe %s
 # environment
 VSCODE_CWD = /home/amir
 # environment
-GSETTINGS_SCHEMA_DIR = /snap/code/95/usr/share/glib-2.0/schemas
+GSETTINGS_SCHEMA_DIR = /snap/code/105/usr/share/glib-2.0/schemas
 # default
 MAKE_HOST := x86_64-pc-linux-gnu
 # environment
@@ -93,29 +87,27 @@ NO_PROXY = 127.0.0.1
 # environment
 GPG_AGENT_INFO = /run/user/1000/gnupg/S.gpg-agent:0:1
 # environment
-SESSION_MANAGER = local/amir-desktop:@/tmp/.ICE-unix/2274,unix/amir-desktop:/tmp/.ICE-unix/2274
+SESSION_MANAGER = local/amir-desktop:@/tmp/.ICE-unix/2220,unix/amir-desktop:/tmp/.ICE-unix/2220
 # environment
 XDG_RUNTIME_DIR = /run/user/1000
 # environment
 GDK_PIXBUF_MODULE_FILE = /home/amir/snap/code/common/.cache/gdk-pixbuf-loaders.cache
 # environment
-SNAP = /snap/code/95
+SNAP = /snap/code/105
 # environment
-SNAP_VERSION = 57fd6d01
+SNAP_VERSION = e4503b30
 # environment
 CONDA_PREFIX = /home/amir/anaconda3/envs/pt
 # environment
 XDG_MENU_PREFIX = gnome-
 # environment
-VSCODE_LOG_STACK = false
-# environment
 DISABLE_WAYLAND = 1
 # environment
 ELECTRON_RUN_AS_NODE = 1
 # environment
-INVOCATION_ID = 2c378a4d4d1945e79f7d3771da32da67
+INVOCATION_ID = 9fae30bf1da34a168801330daaaba838
 # environment
-GDK_PIXBUF_MODULEDIR = /snap/code/95/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders
+GDK_PIXBUF_MODULEDIR = /snap/code/105/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders
 # default
 .FEATURES := target-specific order-only second-expansion else-if shortest-stem undefine oneshell archives jobserver output-sync check-symlink load
 # environment
@@ -125,7 +117,7 @@ XDG_SESSION_DESKTOP = ubuntu
 # environment
 SSH_AUTH_SOCK = /run/user/1000/keyring/ssh
 # environment
-GIO_LAUNCHED_DESKTOP_FILE_PID = 2801105
+GIO_LAUNCHED_DESKTOP_FILE_PID = 888430
 # automatic
 %F = $(notdir $%)
 # environment
@@ -133,15 +125,13 @@ DISPLAY = :1
 # environment
 CONDA_EXE = /home/amir/anaconda3/bin/conda
 # environment
-VSCODE_PIPE_LOGGING = true
-# environment
 SNAP_INSTANCE_KEY = 
 # environment
 PWD = /home/amir/repos/FGPRS
 # default
 .LOADED := 
 # environment
-SSH_AGENT_PID = 2239
+SSH_AGENT_PID = 2185
 # environment
 ORIGINAL_XDG_CURRENT_DESKTOP = ubuntu:GNOME
 # environment
@@ -157,11 +147,11 @@ LESSCLOSE = /usr/bin/lesspipe %s %s
 # environment
 VSCODE_CLI = 1
 # environment
-VSCODE_CODE_CACHE_PATH = /home/amir/.config/Code/CachedData/57fd6d0195bb9b9d1b49f6da5db789060795de47
+VSCODE_CODE_CACHE_PATH = /home/amir/.config/Code/CachedData/e4503b30fc78200f846c62cf8091b76ff5547662
 # environment
 LOGNAME = amir
 # environment
-APPLICATION_INSIGHTS_NO_DIAGNOSTIC_CHANNEL = true
+APPLICATION_INSIGHTS_NO_DIAGNOSTIC_CHANNEL = 1
 # environment
 SNAP_LIBRARY_PATH = /var/lib/snapd/lib/gl:/var/lib/snapd/lib/gl32:/var/lib/snapd/void
 # environment
@@ -185,27 +175,25 @@ SNAP_REAL_HOME = /home/amir
 # environment
 CONDA_DEFAULT_ENV = pt
 # environment
-PLATFORMIO_PATH = /home/amir/.platformio/python3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+PLATFORMIO_PATH = /home/amir/.platformio/python3/bin:/usr/local/cuda-11.6/bin:/home/amir/anaconda3/envs/pt/bin:/home/amir/anaconda3/condabin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
 # default
 MAKE = $(MAKE_COMMAND)
 # default
 MAKECMDGOALS := all
 # environment
-PATH = /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+PATH = /usr/local/cuda-11.6/bin:/home/amir/anaconda3/envs/pt/bin:/home/amir/anaconda3/condabin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
 # environment
-SNAP_USER_DATA = /home/amir/snap/code/95
+SNAP_USER_DATA = /home/amir/snap/code/105
 # environment
 SHLVL = 0
 # environment
 GNOME_SHELL_SESSION_MODE = ubuntu
-# environment
-VSCODE_IPC_HOOK_EXTHOST = /run/user/1000/vscode-ipc-4b7aee7c-244c-45b1-a36b-12f9bfa3d77f.sock
 # default
 MAKE_VERSION := 4.2.1
 # environment
 USER = amir
 # environment
-SNAP_REVISION = 95
+SNAP_REVISION = 105
 # makefile
 .DEFAULT_GOAL := 
 # environment
@@ -223,7 +211,7 @@ MAKE_COMMAND := make
 # automatic
 *F = $(notdir $*)
 # environment
-VSCODE_IPC_HOOK = /run/user/1000/vscode-6ecfff7c-1.67.0-main.sock
+VSCODE_IPC_HOOK = /run/user/1000/vscode-6ecfff7c-1.70.2-main.sock
 # environment
 BAMF_DESKTOP_FILE_HINT = /var/lib/snapd/desktop/applications/code_code.desktop
 # makefile
@@ -238,8 +226,6 @@ MFLAGS = -pqrR
 GDK_BACKEND = x11
 # automatic
 +F = $(notdir $+)
-# environment
-NO_AT_BRIDGE = 1
 # environment
 QT_ACCESSIBILITY = 1
 # default
@@ -279,11 +265,11 @@ GJS_DEBUG_OUTPUT = stderr
 # environment
 LANG = C
 # environment
-VSCODE_PID = 2771769
+VSCODE_PID = 888481
 # environment
 _CE_CONDA = 
 # variable set hash-table stats:
-# Load=135/1024=13%, Rehash=0, Collisions=22/157=14%
+# Load=129/1024=13%, Rehash=0, Collisions=21/151=14%
 
 # Pattern-specific Variable Values
 
@@ -291,18 +277,20 @@ _CE_CONDA =
 
 # Directories
 
-# . (device 66311, inode 28319512): 7 files, no impossibilities.
+# . (device 66311, inode 28319512): 62 files, no impossibilities.
 
-# 7 files, no impossibilities in 1 directories.
+# 62 files, no impossibilities in 1 directories.
 
 # Implicit Rules
 
- 
 # No implicit rules.
 
 # Files
 
 # Not a target:
+ 
+make: *** No rule to make target 'all'.  Stop.
+
 all:
 #  Command line target.
 #  Implicit rule search has been done.
@@ -344,12 +332,12 @@ GNUmakefile:
 
 # No general ('VPATH' variable) search path.
 
-# strcache buffers: 1 (0) / strings = 15 / storage = 123 B / avg = 8 B
-# current buf: size = 8162 B / used = 123 B / count = 15 / avg = 8 B
+# strcache buffers: 1 (0) / strings = 70 / storage = 940 B / avg = 13 B
+# current buf: size = 8162 B / used = 940 B / count = 70 / avg = 13 B
 
-# strcache performance: lookups = 18 / hit rate = 16%
+# strcache performance: lookups = 73 / hit rate = 4%
 # hash-table stats:
-# Load=15/8192=0%, Rehash=0, Collisions=1/18=6%
-# Finished Make data base on Sat May  7 17:30:09 2022
+# Load=70/8192=1%, Rehash=0, Collisions=1/73=1%
+# Finished Make data base on Sun Aug 21 17:57:34 2022
 
  
