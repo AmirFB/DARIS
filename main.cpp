@@ -1,4 +1,5 @@
 # include <iostream>
+# include <fstream>
 # include <iomanip>
 # include <thread>
 # include <pthread.h>
@@ -6,12 +7,13 @@
 # include <string>
 # include <cstdlib>
 # include <future> 
+# include <sys/stat.h>
 
 # include <torch/torch.h>
 # include <torch/script.h>
 # include <c10/cuda/CUDAStream.h>
 # include <ATen/cuda/CUDAContext.h>
-#include <c10/cuda/CUDACachingAllocator.h>
+# include <c10/cuda/CUDACachingAllocator.h>
 
 # include <cuda.h>
 # include <cudaTypedefs.h>
@@ -26,14 +28,16 @@
 # include "operation.h"
 # include "resnet.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
+# include "tests.h"
 
-#define _UNIX03_THREADS 1
-#include <limits.h>                                                            
-#include <errno.h> 
+# include <stdio.h>
+# include <stdlib.h>
+# include <unistd.h>
+# include <errno.h>
+
+# define _UNIX03_THREADS 1
+# include <limits.h>                                                            
+# include <errno.h> 
 
 using namespace std;
 using namespace std::chrono;
@@ -45,8 +49,7 @@ using namespace FGPRS;
 	do { errno = en; perror(msg); } while (0)
 	// do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
 
-void
-test_container()
+void test_container()
 {
 	int options[] = {2, 10};
 	bool result = Scheduler::initialize(options, 2);
@@ -73,7 +76,7 @@ test_container()
 	cout << "Average Inference Time: " << net->executionTime << endl;
 }
 
-void test_speedup()
+void test_speedup2()
 {
 	torch::NoGradGuard no_grad;
 	int warmup = 100, repeat = 1000;
@@ -856,6 +859,8 @@ bool tailing_dummy_thrd(bool* stop, MyContext* ctx, Sequential module, Tensor in
 
 void test_tailing(int argc, char** argv)
 {
+	string folder = "tail/";
+	string fileNameSync = "tail_sync", fileNameAsync = "tail_async";
 	int warmup = 100, repeat = 1000;
 
 	printf("Starting process for \"Tailing Effect\" simulation with %s SMs:\n", argv[1]);
@@ -963,12 +968,31 @@ void test_tailing(int argc, char** argv)
 	resultAsync /= repeat;
 	resultSync /= repeat;
 
+
+
 	cout << fixed << setprecision(2);
 	cout << "Result Wihout Synchronization:\t" << resultAsync * 1000 * 1000 << "us" << endl;
 	cout << "Result With Synchronization:\t" << resultSync * 1000 * 1000 << "us" << endl;
 	cout << "Overhead:\t\t\t" << showpos << (resultSync - resultAsync) / resultAsync * 100 << "%" << endl << endl;
 
 	c10::cuda::CUDACachingAllocator::emptyCache();
+}
+
+void tabs(size_t num)
+{
+  for (size_t i = 0; i < num; i++)
+    std::cout << "\t";
+}
+
+void print_modules(const shared_ptr<Module>& module, size_t level = 0)
+{
+	// module->pretty_print(cout);
+	// cout << endl;
+	for (const auto &param : module->modules())
+	{
+		param->pretty_print(cout);
+		cout << endl;
+	}
 }
 
 int main(int argc, char** argv)
@@ -979,46 +1003,50 @@ int main(int argc, char** argv)
 	// test_parallel();
 	// test_interference();
 	// test_speedup_double(argc, argv);
-	test_tailing(argc, argv);
+	// test_tailing(argc, argv);
+
+	// cout << "ResNet18\n";
+	// auto model = resnet18(1000);
+	// print_modules(model);
+	// cout << endl
+	// 		 << endl;
+
+	// cout << "ResNet34\n";
+	// model = resnet34(1000);
+	// print_modules(model);
+	// cout << endl
+	// 		 << endl;
+
+	// cout << "ResNet50\n";
+	// auto model2 = resnet50(1000);
+	// print_modules(model2);
+	// cout << endl
+	// 		 << endl;
+
+	// cout << "ResNet101\n";
+	// model2 = resnet101(1000);
+	// print_modules(model2);
+	// cout << endl
+	// 		 << endl;
+
+	// cout << "ResNet152\n";
+	// model2 = resnet152(1000);
+	// print_modules(model2);
+	// cout << endl
+	// 		 << endl;
+
+	char *op = argv[1];
+	mkdir("results", 0777 );
+
+	if (!strcmp(op, "clear"))
+	{
+		cout << "Removing previous results of \"" << argv[2] << "\" simulation\n";
+		remove((string("results/") + string(argv[2]) + ".csv").c_str());
+	}
+
+	else if (!strcmp(op, "speedup"))
+		testSpeedup(&argv[2]);
+
+	else if (!strcmp(op, "concurrency"))
+		testConcurrency(&argv[2]);
 }
-
-// cmake -DUSE_MKLDNN=ON \
-//       -DBUILD_CUSTOM_PROTOBUF=OFF \
-//       -DBUILD_SHARED_LIBS=ON \
-//       -DUSE_FFMPEG=ON \
-//       -DUSE_GFLAGS=ON \
-//       -DUSE_GLOG=ON \
-//       -DBUILD_BINARY=ON \
-//       -DBUILD_PYTHON=OFF \
-//       -DBUILD_TEST=OFF \
-//       -DPYTHON_LIBRARY='' \
-//       -DUSE_OPENCV=ON \
-//       -DUSE_SYSTEM_NCCL=ON \
-//       -DUSE_DISTRIBUTED=ON \
-//       -DNCCL_VERSION=$(pkg-config nccl --modversion) \
-//       -DNCCL_VER_CODE=$(sed -n 's/^#define NCCL_VERSION_CODE\s*\(.*\).*/\1/p' /usr/include/nccl.h) \
-//       -DCUDAHOSTCXX=g++ \
-//       -DCUDA_HOME=/usr/local/cuda-11.8 \
-//       -DCUDNN_LIB_DIR=/usr/local/cuda-11.8/lib64 \
-//       -DCUDNN_INCLUDE_DIR=/usr/local/cuda-11.8/include \
-//       -DTORCH_CUDA_ARCH_LIST="5.2;5.3;6.0;6.1;6.2;7.0;7.0+PTX;7.2;7.2+PTX;7.5;7.5+PTX;8.0;8.0+PTX;8.6;8.6+PTX" \
-//       -DUSE_CUDA=ON \
-//       -DUSE_CUDNN=ON \
-//       -DBUILD_SHARED_LIBS=ON \
-//       -DCMAKE_BUILD_TYPE=Release \
-//       -DCMAKE_INSTALL_PREFIX=../pytorch-install \
-//       -GNinja \
-//       ../pytorch
-
-// CMAKE_PREFIX_PATH="/usr/bin/" \
-//     LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:/usr/local/lib:$LD_LIBRARY_PATH \
-//     CUDA_BIN_PATH=/usr/local/cuda-11.8/bin \
-//     CUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-11.8/ \
-//     CUDNN_LIB_DIR=/usr/local/cuda-11.8/lib64 \
-//     CUDA_HOST_COMPILER=cc \
-//     USE_CUDA=1 \
-//     USE_NNPACK=1 \
-//     CC=cc \
-//     CXX=c++ \
-//     TORCH_CUDA_ARCH_LIST="5.2;5.3;6.0;6.1;6.2;7.0;7.0+PTX;7.2;7.2+PTX;7.5;7.5+PTX;8.0;8.0+PTX;8.6;8.6+PTX" \
-//     TORCH_NVCC_FLAGS="-Xfatbin -compress-all" \

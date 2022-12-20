@@ -9,3 +9,7 @@ add_subdirectory(net)
 target_include_directories(fgprs PUBLIC sch)
 include_directories(sch)
 add_subdirectory(sch)
+
+target_include_directories(fgprs PUBLIC tests)
+include_directories(tests)
+add_subdirectory(tests)
