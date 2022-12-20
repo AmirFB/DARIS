@@ -49,6 +49,23 @@
 		"deque": "cpp",
 		"unordered_map": "cpp",
 		"sstream": "cpp",
-		"iomanip": "cpp"
+		"iomanip": "cpp",
+		"bitset": "cpp",
+		"codecvt": "cpp",
+		"cstdarg": "cpp",
+		"cstddef": "cpp",
+		"cstring": "cpp",
+		"unordered_set": "cpp",
+		"algorithm": "cpp",
+		"iterator": "cpp",
+		"memory_resource": "cpp",
+		"numeric": "cpp",
+		"random": "cpp",
+		"__hash_table": "cpp",
+		"__tree": "cpp",
+		"filesystem": "cpp",
+		"forward_list": "cpp",
+		"list": "cpp",
+		"__threading_support": "cpp"
 	}
 }

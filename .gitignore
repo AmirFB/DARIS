@@ -1,4 +1,6 @@
 build
+libtorch-build
+libtorch-install
 *.nsys-rep
 *.sqlite
 *.qdstrm

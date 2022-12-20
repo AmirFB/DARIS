@@ -1,5 +1,5 @@
 echo quit | nvidia-cuda-mps-control
 nvidia-cuda-mps-control -d
 export CUDA_LAUNCH_BLOCKING=1
-/usr/local/cuda-11.6/bin/nsys profile -t nvtx,cuda --stats=true --cudabacktrace memory --cuda-memory-usage=true --gpu-metrics-device=0 --gpu-metrics-set=0 --gpu-metrics-frequency=10000 build/fgprs 2 4
+/usr/local/cuda/bin/nsys profile -t nvtx,cuda --stats=true --cudabacktrace memory --cuda-memory-usage=true --gpu-metrics-device=0 --gpu-metrics-set=0 --gpu-metrics-frequency=10000 build/fgprs 2 4
 echo quit | nvidia-cuda-mps-control

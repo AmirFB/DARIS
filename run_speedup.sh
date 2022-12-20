@@ -1,3 +1,5 @@
+bash build.sh
+
 echo quit | nvidia-cuda-mps-control
 nvidia-cuda-mps-control -d
 export CUDA_LAUNCH_BLOCKING=1
@@ -5,8 +7,12 @@ export CUDA_HOME=/usr/local/cuda
 # export LD_LIBRARY_PATH="$CUDA_HOME/extras/CUPTI/lib64:$LD_LIBRARY_PATH"
 export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$LD_LIBRARY_PATH"
 # export PYTORCH_NO_CUDA_MEMORY_CACHING=1
-for var in {2..2..2}
+
+./build/fgprs clear speedup
+
+for var in {2..68..2}
 do
-	./build/fgprs $var
+	./build/fgprs speedup	$var 2
 done
+
 echo quit | nvidia-cuda-mps-control
