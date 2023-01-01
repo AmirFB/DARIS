@@ -10,6 +10,7 @@ void writeToFile(const char* folder, char *fileName, int sm, vector<double> valu
 void writeToFile(const char *fileName, int sm, vector<double> values);
 
 void testSpeedup(char **argv);
-void testConcurrency(char **argv);
+// void testConcurrency(char **argv);
+void testTailing(char **argv);
 
 # endif

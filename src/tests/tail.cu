@@ -2,6 +2,7 @@
 # include <stdlib.h>
 # include <sys/stat.h>
 # include <unistd.h>
+# include <future>
 
 # include <iostream>
 # include <chrono>
@@ -28,6 +29,18 @@ using namespace FGPRS;
 
 # define MODULE_COUNT	3
 
+vector<double> repeat(int timer, int delay,
+	MyContext* ctxD, Sequential modD, Tensor inD,
+	MyContext* ctx1, Sequential mod1, Tensor in1,
+	MyContext* ctx2, Sequential mod2, Tensor in2);
+vector<double> run(int sync, bool dummy, int delay,
+	MyContext* ctxD, Sequential modD, Tensor inD,
+	MyContext* ctx1, Sequential mod1, Tensor in1,
+	MyContext* ctx2, Sequential mod2, Tensor in2);
+void dummy_thrd(bool* stop, MyContext* ctx, Sequential mod, Tensor in);
+void main_thrd(MyContext* ctx, Sequential mod, Tensor in, bool* finished);
+void tail_thrd(int sync, MyContext* ctx, Sequential mod, Tensor in, bool* finished);
+
 void testTailing(char** argv)
 {
 	NoGradGuard no_grad;
@@ -43,7 +56,7 @@ void testTailing(char** argv)
 
 	for (int i = 0; i < MODULE_COUNT; i++)
 	{
-		cnv[i] = Sequential(cnv2d(cnv2dOptions(512, 1024, 3).stride(2).padding(1)));
+		cnv[i] = Sequential(Conv2d(Conv2dOptions(512, 1024, 3).stride(2).padding(1)));
 		inc[i] = torch::randn({512, 48, 48}, kCUDA);
 
 		lin[i] = Sequential(Linear(4096*4, 10000));
@@ -59,7 +72,7 @@ void testTailing(char** argv)
 		lin[i]->to(kCUDA);
 	}
 
-	int options[] = {min(smCount, 68 - smCount), max((smCount, 68 - smCount))};
+	int options[] = {min(smCount, 68 - smCount), max(smCount, 68 - smCount)};
 	
 	if (!Scheduler::initialize(options, 1))
 	{
@@ -119,7 +132,10 @@ void testTailing(char** argv)
 	while (true)
 	{
 		for (int i = 0; i < MODULE_COUNT; i++)
-			dummy = mod[i]->forward(in[i]);
+		{
+			dummy = cnv[i]->forward(inc[i]);
+			dummy = lin[i]->forward(inl[i]);
+		}
 		
 		cuCtxSynchronize();
 		now = steady_clock::now();
@@ -134,47 +150,56 @@ void testTailing(char** argv)
 	duration<double> d;
 	vector<double> results(MODULE_COUNT);
 
-	ctx->select(0);
-
-	for (int i = 0; i < MODULE_COUNT; i++)
-	{
-		cout << "Running operation \"" << moduleName[i] << "\": ";
-		int count = 0;
-
-		tstart = steady_clock::now();
-		tend = tstart + milliseconds(timer);
-
-		while (true)
-		{
-			dummy = mod[i]->forward(in[i]);
-			cuCtxSynchronize();
-			count++;
-			now = steady_clock::now();
-
-			if (tend <= steady_clock::now())
-				break;
-		}
-
-		d = now - tstart;
-		results[i] = d.count() / count * 1000000;
-		printf("%6.3lfus\n", results[i]);
-	}
-
-	ctx->release(0);
+	
+	
 	cout << "Saving results\n";
 	writeToFile("speedup", smCount, results);
 	cout << "-------------------------------------------------------------------------------\n\n";
 }
 
-vector<double> repeat(int repeat, int sync, int dummy, int delay,
+vector<double> repeat(int timer, int delay,
 	MyContext* ctxD, Sequential modD, Tensor inD,
 	MyContext* ctx1, Sequential mod1, Tensor in1,
 	MyContext* ctx2, Sequential mod2, Tensor in2)
 {
-	
+	vector<double> temp(2), result(2), output(0);
+	steady_clock::time_point tstart, tend, now;
+
+	for (int sync = 0; sync < 3; sync++)
+	{
+		for (int dummy = 0; dummy < 3; dummy++)
+		{
+			int count = 0;
+			result[0] = 0;
+			result[1] = 0;
+
+			tstart = steady_clock::now();
+			tend = tstart + milliseconds(timer);
+
+			while (true)
+			{
+				temp = run(sync, dummy, delay,
+					ctxD, modD, inD,
+					ctx1, mod1, in1,
+					ctx2, mod2, in2);
+				cuCtxSynchronize();
+				count++;
+				result[0] += temp[0];
+				result[1] += temp[1];
+				now = steady_clock::now();
+
+				if (tend <= steady_clock::now())
+					break;
+			}
+
+			output.insert(output.end(), result.begin(), result.end());
+		}
+	}
+
+	return output;
 }
 
-vector<double> run(int sync, int dummy, int delay,
+vector<double> run(int sync, bool dummy, int delay,
 	MyContext* ctxD, Sequential modD, Tensor inD,
 	MyContext* ctx1, Sequential mod1, Tensor in1,
 	MyContext* ctx2, Sequential mod2, Tensor in2)
@@ -182,14 +207,14 @@ vector<double> run(int sync, int dummy, int delay,
 	steady_clock::time_point t1, t2, t3;
 	vector<double> output(2);
 	duration<double> d;
-	bool stop = dummy, finished = false;;
+	bool stop = dummy, finished = false;
 
-	auto thD = async(dummy_thrd, &stop, ctxD, inD);
+	auto thD = async(dummy_thrd, &stop, ctxD, modD, inD);
 	
 	t1 = steady_clock::now();
-	th1 = async(main_thrd, ctx1, mod1, in1, &finished);
+	auto th1 = async(main_thrd, ctx1, mod1, in1, &finished);
 	usleep(delay);
-	th2 = async(tail_thrd, sync, ctx2, mod2, in2, &finished);
+	auto th2 = async(tail_thrd, sync, ctx2, mod2, in2, &finished);
 	
 	th1.get();
 	t2 = steady_clock::now();
@@ -231,7 +256,7 @@ void tail_thrd(int sync, MyContext* ctx, Sequential mod, Tensor in, bool* finish
 	else if (sync == 2)
 		while (!*finished);
 
-	auto out = mod->forward(input);
+	auto out = mod->forward(in);
 	ctx->release(0);
 	cuCtxSynchronize();
 }
