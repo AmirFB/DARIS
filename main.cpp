@@ -1047,6 +1047,6 @@ int main(int argc, char** argv)
 	else if (!strcmp(op, "speedup"))
 		testSpeedup(&argv[2]);
 
-	else if (!strcmp(op, "concurrency"))
-		testConcurrency(&argv[2]);
+	// else if (!strcmp(op, "concurrency"))
+	// 	testConcurrency(&argv[2]);
 }
