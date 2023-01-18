@@ -1052,4 +1052,7 @@ int main(int argc, char** argv)
 
 	else if (!strcmp(op, "tailing"))
 		testTailing(&argv[2]);
+
+	else if (!strcmp(op, "interference"))
+		testInterference(&argv[2]);
 }
