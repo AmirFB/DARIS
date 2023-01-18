@@ -20,6 +20,7 @@ MyContext::MyContext()
 	_default = true;
 	this->smCount = Scheduler::maxSmCount;
 	queueDuration = 0;
+	_pMutex = new mutex();
 }
 
 MyContext::MyContext(unsigned smCount)
@@ -27,6 +28,7 @@ MyContext::MyContext(unsigned smCount)
 	_default = false;
 	this->smCount = smCount;
 	queueDuration = 0;
+	_pMutex = new mutex();
 }
 
 bool MyContext::initialize()
@@ -37,8 +39,9 @@ bool MyContext::initialize()
 	CUexecAffinityParam_v1 affinity;
 	affinity.type = CU_EXEC_AFFINITY_TYPE_SM_COUNT;
 	affinity.param.smCount.val = smCount;
+	auto result = cuCtxCreate_v3(&_context, &affinity, 1, 0, 0);
 	
-	return cuCtxCreate_v3(&_context, &affinity, 1, 0, 0) == CUDA_SUCCESS;
+	return result == CUDA_SUCCESS;
 }
 
 bool MyContext::select(double duration)
@@ -65,7 +68,7 @@ bool MyContext::release(double duration)
 {
 	queueDuration -= (unsigned long)(duration * 1000000);
 	busy = false;
-	cuCtxSynchronize();
+	// cuCtxSynchronize();
 	// torch::cuda::synchronize();
 	return selectDefault();
 }
@@ -78,4 +81,14 @@ bool MyContext::destroy()
 		return true;
 	
 	return cuCtxDestroy(_context) == CUDA_SUCCESS;
+}
+
+void MyContext::lock()
+{
+	_pMutex->lock();
+}
+
+void MyContext::unlock()
+{
+	_pMutex->unlock();
 }

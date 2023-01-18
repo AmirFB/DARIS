@@ -2,17 +2,22 @@
 # define CTX_H
 
 # include <cstdint>
+# include <mutex>
+# include <iostream>
 
 # include <cuda.h>
 # include <cudaTypedefs.h>
+
+using namespace std;
 
 namespace FGPRS
 {
 	class MyContext
 	{
-		public:
+		private:
 		CUcontext _context;
 		bool _default;
+		mutable mutex* _pMutex;
 
 		public:
 		bool busy = false;
@@ -26,6 +31,8 @@ namespace FGPRS
 		static bool selectDefault();
 		bool release(double duration);
 		bool destroy();
+		void lock();
+		void unlock();
 	};
 }
 

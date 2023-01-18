@@ -66,6 +66,8 @@
 		"filesystem": "cpp",
 		"forward_list": "cpp",
 		"list": "cpp",
-		"__threading_support": "cpp"
+		"__threading_support": "cpp",
+		"__mutex_base": "cpp",
+		"shared_mutex": "cpp"
 	}
 }
