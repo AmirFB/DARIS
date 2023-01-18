@@ -32,8 +32,8 @@ bool Scheduler::initialize(int options[], int size)
 
 	for (int i = 0; i < (poolSize - 1); i++)
 	{
-		smOptions[i] = options[i];
-		_pContextPool[i] = MyContext(options[i]);
+		smOptions[i] = max(options[i], 1);
+		_pContextPool[i] = MyContext(smOptions[i]);
 		result &= _pContextPool[i].initialize();
 	}
 
