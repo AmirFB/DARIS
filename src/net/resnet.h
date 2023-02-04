@@ -5,7 +5,7 @@
 
 using namespace FGPRS;
 
-struct BasicBlock : torch::nn::Module
+struct BasicBlock : Container
 {
     BasicBlock(int64_t inplanes, int64_t planes, int64_t stride = 1,
                torch::nn::Sequential downsample = torch::nn::Sequential(),
@@ -24,7 +24,7 @@ struct BasicBlock : torch::nn::Module
     torch::Tensor forward(torch::Tensor x);
 };
 
-struct Bottleneck : torch::nn::Module
+struct Bottleneck : Container
 {
     Bottleneck(int64_t inplanes, int64_t planes, int64_t stride = 1,
                torch::nn::Sequential downsample = torch::nn::Sequential(),
@@ -70,7 +70,7 @@ struct ResNet : Container
 
     torch::Tensor _forward_impl(torch::Tensor x);
 
-    // torch::Tensor forward(torch::Tensor x);
+    torch::Tensor forward(torch::Tensor x);
 };
 
 template <class Block>

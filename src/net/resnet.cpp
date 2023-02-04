@@ -5,6 +5,7 @@
 #include <torch/torch.h>
 
 # include <container.h>
+# include <ctx.h>
 
 using namespace FGPRS;
 
@@ -47,7 +48,7 @@ torch::nn::Conv2dOptions create_conv1x1_options(int64_t in_planes,
     return conv_options;
 }
 
-struct BasicBlock : torch::nn::Module
+struct BasicBlock : Container
 {
     BasicBlock(int64_t inplanes, int64_t planes, int64_t stride = 1,
                torch::nn::Sequential downsample = torch::nn::Sequential(),
@@ -111,7 +112,7 @@ struct BasicBlock : torch::nn::Module
     }
 };
 
-struct Bottleneck : torch::nn::Module
+struct Bottleneck : Container
 {
     Bottleneck(int64_t inplanes, int64_t planes, int64_t stride = 1,
                torch::nn::Sequential downsample = torch::nn::Sequential(),
@@ -329,7 +330,6 @@ struct ResNet : Container
 
     torch::Tensor _forward_impl(torch::Tensor x)
     {
-
         x = m_conv1->forward(x);
         x = m_bn1->forward(x);
         x = m_relu->forward(x);
