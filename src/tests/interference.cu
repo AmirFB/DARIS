@@ -30,12 +30,12 @@ using namespace FGPRS;
 # define MODULE_COUNT	2
 
 vector<double> repeat(int timer,
-	MyContext* ctx1, Sequential mod1, Tensor in1,
-	MyContext* ctx2, Sequential mod2, Tensor in2);
+	MyContext ctx1, Sequential mod1, Tensor in1,
+	MyContext ctx2, Sequential mod2, Tensor in2);
 double run(int delay,
-	MyContext* ctx1, Sequential mod1, Tensor in1,
-	MyContext* ctx2, Sequential mod2, Tensor in2);
-void thrd(MyContext* ctx, Sequential mod, Tensor in);
+	MyContext ctx1, Sequential mod1, Tensor in1,
+	MyContext ctx2, Sequential mod2, Tensor in2);
+void thrd(MyContext ctx, Sequential mod, Tensor in);
 
 void testInterference(char** argv)
 {
@@ -80,9 +80,9 @@ void testInterference(char** argv)
 	cout << "Warming up\n";
 
 	auto ctx1 = Scheduler::selectContext(smCount);
-	ctx1->select(0);
+	ctx1.select();
 	auto ctx2 = Scheduler::selectContext(68 - smCount);
-	ctx1->release(0);
+	ctx1.release();
 
 	Tensor dummy;
 	steady_clock::time_point tstart, now, tend;
@@ -90,29 +90,29 @@ void testInterference(char** argv)
 	tend = tstart + milliseconds(timer);
 
 	auto ctxD = Scheduler::selectContext(68);
-	ctxD->select(0);
+	ctxD.select();
 
 	while (true)
 	{
 		for (int i = 0; i < MODULE_COUNT; i++)
 		{
-			ctxD->select(0);
+			ctxD.select();
 			dummy = cnv[i]->forward(inc[i]);
 			dummy = lin[i]->forward(inl[i]);
 			cuCtxSynchronize();
-			ctxD->release(0);
+			ctxD.release();
 			
-			ctx1->select(0);
+			ctx1.select();
 			dummy = cnv[i]->forward(inc[i]);
 			dummy = lin[i]->forward(inl[i]);
 			cuCtxSynchronize();
-			ctx1->release(0);
+			ctx1.release();
 			
-			ctx2->select(0);
+			ctx2.select();
 			dummy = cnv[i]->forward(inc[i]);
 			dummy = lin[i]->forward(inl[i]);
 			cuCtxSynchronize();
-			ctx2->release(0);
+			ctx2.release();
 		}
 		
 		cuCtxSynchronize();
@@ -135,8 +135,8 @@ void testInterference(char** argv)
 }
 
 vector<double> repeat(int timer,
-	MyContext* ctx1, Sequential mod1, Tensor in1,
-	MyContext* ctx2, Sequential mod2, Tensor in2)
+	MyContext ctx1, Sequential mod1, Tensor in1,
+	MyContext ctx2, Sequential mod2, Tensor in2)
 {
 	vector<double> output(0);
 	double result, bcet1, bcet2;
@@ -152,7 +152,7 @@ vector<double> repeat(int timer,
 	tstart = steady_clock::now();
 	tend = tstart + milliseconds(timer);
 
-	ctx1->select(0);
+	ctx1.select();
 
 	while (true)
 	{
@@ -165,7 +165,7 @@ vector<double> repeat(int timer,
 			break;
 	}
 
-	ctx1->release(0);
+	ctx1.release();
 
 	duration<double> d = now - tstart;
 	bcet1 = d.count() * 1000000 / count;
@@ -174,7 +174,7 @@ vector<double> repeat(int timer,
 	tstart = steady_clock::now();
 	tend = tstart + milliseconds(timer);
 
-	ctx2->select(0);
+	ctx2.select();
 
 	while (true)
 	{
@@ -187,7 +187,7 @@ vector<double> repeat(int timer,
 			break;
 	}
 
-	ctx2->release(0);
+	ctx2.release();
 
 	d = now - tstart;
 	bcet2 = d.count() * 1000000 / count;
@@ -240,8 +240,8 @@ vector<double> repeat(int timer,
 }
 
 double run(int delay,
-	MyContext* ctx1, Sequential mod1, Tensor in1,
-	MyContext* ctx2, Sequential mod2, Tensor in2)
+	MyContext ctx1, Sequential mod1, Tensor in1,
+	MyContext ctx2, Sequential mod2, Tensor in2)
 {
 	steady_clock::time_point t1, t2, t3;
 	vector<double> output(2);
@@ -260,11 +260,11 @@ double run(int delay,
 	return d.count();
 }
 
-void thrd(MyContext* ctx, Sequential mod, Tensor in)
+void thrd(MyContext ctx, Sequential mod, Tensor in)
 {
-	ctx->select(0);
-	ctx->lock();
+	ctx.select();
+	ctx.lock();
 	auto out = mod->forward(in);
-	ctx->unlock();
-	ctx->release(0);
+	ctx.unlock();
+	ctx.release();
 }

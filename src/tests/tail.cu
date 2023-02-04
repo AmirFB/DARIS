@@ -30,17 +30,17 @@ using namespace FGPRS;
 # define MODULE_COUNT	3
 
 vector<double> repeat(int timer,
-	MyContext* ctxD1, Sequential modD1, Tensor inD1,
-	MyContext* ctxD2, Sequential modD2, Tensor inD2,
-	MyContext* ctx1, Sequential mod1, Tensor in1,
-	MyContext* ctx2, Sequential mod2, Tensor in2);
+	MyContext ctxD1, Sequential modD1, Tensor inD1,
+	MyContext ctxD2, Sequential modD2, Tensor inD2,
+	MyContext ctx1, Sequential mod1, Tensor in1,
+	MyContext ctx2, Sequential mod2, Tensor in2);
 vector<double> run(int sync, bool dummy, int delay,
-	MyContext* ctxD, Sequential modD, Tensor inD,
-	MyContext* ctx1, Sequential mod1, Tensor in1,
-	MyContext* ctx2, Sequential mod2, Tensor in2);
-void dummy_thrd(bool* stop, MyContext* ctx, Sequential mod, Tensor in);
-void main_thrd(MyContext* ctx, Sequential mod, Tensor in);
-void tail_thrd(int sync, MyContext* ctx, Sequential mod, Tensor in);
+	MyContext ctxD, Sequential modD, Tensor inD,
+	MyContext ctx1, Sequential mod1, Tensor in1,
+	MyContext ctx2, Sequential mod2, Tensor in2);
+void dummy_thrd(bool* stop, MyContext ctx, Sequential mod, Tensor in);
+void main_thrd(MyContext ctx, Sequential mod, Tensor in);
+void tail_thrd(int sync, MyContext ctx, Sequential mod, Tensor in);
 
 void testTailing(char** argv)
 {
@@ -85,9 +85,9 @@ void testTailing(char** argv)
 	cout << "Warming up\n";
 
 	auto ctx = Scheduler::selectContext(smCount);
-	ctx->select(0);
+	ctx.select();
 	auto ctxP = Scheduler::selectContext(68 - smCount);
-	ctx->release(0);
+	ctx.release();
 
 	Tensor dummy;
 	steady_clock::time_point tstart, now, tend;
@@ -95,29 +95,29 @@ void testTailing(char** argv)
 	tend = tstart + milliseconds(5000);
 
 	auto ctxD = Scheduler::selectContext(68);
-	ctxD->select(0);
+	ctxD.select();
 
 	while (true)
 	{
 		for (int i = 0; i < MODULE_COUNT; i++)
 		{
-			ctxD->select(0);
+			ctxD.select();
 			dummy = cnv[i]->forward(inc[i]);
 			dummy = lin[i]->forward(inl[i]);
 			cuCtxSynchronize();
-			ctxD->release(0);
+			ctxD.release();
 			
-			ctx->select(0);
+			ctx.select();
 			dummy = cnv[i]->forward(inc[i]);
 			dummy = lin[i]->forward(inl[i]);
 			cuCtxSynchronize();
-			ctx->release(0);
+			ctx.release();
 			
-			ctxP->select(0);
+			ctxP.select();
 			dummy = cnv[i]->forward(inc[i]);
 			dummy = lin[i]->forward(inl[i]);
 			cuCtxSynchronize();
-			ctxP->release(0);
+			ctxP.release();
 		}
 		
 		cuCtxSynchronize();
@@ -163,10 +163,10 @@ void testTailing(char** argv)
 }
 
 vector<double> repeat(int timer,
-	MyContext* ctxD1, Sequential modD1, Tensor inD1,
-	MyContext* ctxD2, Sequential modD2, Tensor inD2,
-	MyContext* ctx1, Sequential mod1, Tensor in1,
-	MyContext* ctx2, Sequential mod2, Tensor in2)
+	MyContext ctxD1, Sequential modD1, Tensor inD1,
+	MyContext ctxD2, Sequential modD2, Tensor inD2,
+	MyContext ctx1, Sequential mod1, Tensor in1,
+	MyContext ctx2, Sequential mod2, Tensor in2)
 {
 	vector<double> temp(2), result(2), output(0);
 	steady_clock::time_point tstart, tend, now;
@@ -181,7 +181,7 @@ vector<double> repeat(int timer,
 	tstart = steady_clock::now();
 	tend = tstart + milliseconds(timer);
 
-	ctx1->select(0);
+	ctx1.select();
 
 	while (true)
 	{
@@ -194,7 +194,7 @@ vector<double> repeat(int timer,
 			break;
 	}
 
-	ctx1->release(0);
+	ctx1.release();
 
 	duration<double> d = now - tstart;
 	delayLimit[0] = d.count() * 1000000 / count * 0.01;
@@ -271,9 +271,9 @@ vector<double> repeat(int timer,
 }
 
 vector<double> run(int sync, bool dummy, int delay,
-	MyContext* ctxD, Sequential modD, Tensor inD,
-	MyContext* ctx1, Sequential mod1, Tensor in1,
-	MyContext* ctx2, Sequential mod2, Tensor in2)
+	MyContext ctxD, Sequential modD, Tensor inD,
+	MyContext ctx1, Sequential mod1, Tensor in1,
+	MyContext ctx2, Sequential mod2, Tensor in2)
 {
 	steady_clock::time_point t1, t2, t3;
 	vector<double> output(2);
@@ -286,7 +286,7 @@ vector<double> run(int sync, bool dummy, int delay,
 		return output;
 	}
 
-	bool stop = (!dummy && ctxD->smCount > 1), finished = false;
+	bool stop = (!dummy && ctxD.smCount > 1), finished = false;
 	auto thD = async(dummy_thrd, &stop, ctxD, modD, inD);
 	
 	t1 = steady_clock::now();
@@ -308,40 +308,40 @@ vector<double> run(int sync, bool dummy, int delay,
 	return output;
 }
 
-void dummy_thrd(bool* stop, MyContext* ctx, Sequential mod, Tensor in)
+void dummy_thrd(bool* stop, MyContext ctx, Sequential mod, Tensor in)
 {
-	ctx->select(0);
+	ctx.select();
 	
 	while(!*stop)
 		auto out = mod->forward(in);
 		
-	ctx->release(0);
+	ctx.release();
 }
 
-void main_thrd(MyContext* ctx, Sequential mod, Tensor in)
+void main_thrd(MyContext ctx, Sequential mod, Tensor in)
 {
-	ctx->select(0);
-	ctx->lock();
+	ctx.select();
+	ctx.lock();
 	auto out = mod->forward(in);
-	ctx->unlock();
-	ctx->release(0);
+	ctx.unlock();
+	ctx.release();
 }
 
-void tail_thrd(int sync, MyContext* ctx, Sequential mod, Tensor in)
+void tail_thrd(int sync, MyContext ctx, Sequential mod, Tensor in)
 {
-	ctx->select(0);
+	ctx.select();
 	
 	if (sync == 1)
 		// cuCtxSynchronize();
 		return;
 	
 	else if (sync == 2)
-		ctx->lock();
+		ctx.lock();
 
 	auto out = mod->forward(in);
 	
 	if (sync == 2)
-		ctx->unlock();
+		ctx.unlock();
 
-	ctx->release(0);
+	ctx.release();
 }
