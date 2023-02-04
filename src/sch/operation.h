@@ -150,8 +150,6 @@ namespace FGPRS
 				
 				_isolatedScalability += max((isolatedGain - 1) / (desired - 1), 0.0);
 				_occupiedScalability += max((occupiedGain - 1) / (desired - 1), 0.0);
-
-				// cout << endl << _isolatedScalability << ", " << _occupiedScalability << endl;
 			}
 
 			_predictability /= 4;

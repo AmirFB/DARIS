@@ -22,7 +22,6 @@
 # include "ctx.h"
 # include "schd.h"
 # include "container.h"
-# include "mynet.h"
 
 # include "cif10.h"
 # include "operation.h"
@@ -44,9 +43,6 @@ using namespace FGPRS;
 
 int main(int argc, char** argv)
 {
-	// AnyModule module(Sequential(Linear(10, 10)));
-	// auto dummy = module.forward(torch::ones(10));
-	// cout << dummy << endl;
 	NoGradGuard no_grad;
 
 	int smOptions[] = {4, 10, 18, 32, 36, 50, 58, 64};
@@ -56,7 +52,7 @@ int main(int argc, char** argv)
 
 	Tensor dummyData1 = torch::ones({1, 3, 224, 224}, kCUDA);
 	Tensor dummyData2 = torch::ones({1, 3, 2048, 2048}, kCUDA);
-	auto res = resnet18(1000);
+	auto res = resnet158(1000);
 	
 	res->eval();
 	res->to(kCUDA);
@@ -68,14 +64,6 @@ int main(int argc, char** argv)
 	temp = res->analyze(dummyData1, realOptions);
 	cout << endl << endl << endl;
 	temp = res->analyze(dummyData2, realOptions);
-
-	// cout << temp << endl;
-	// cout << dummy << endl;
-	// res->forward(dummyData);
-
-	// auto dummy = res->forward(torch::randn({1, 3, 224, 224}, kCUDA));
-	// dummy = res->forward(torch::randn({1, 3, 224, 224}, kCUDA));
-	// dummy = res->forward(torch::randn({1, 3, 224, 224}, kCUDA));
 
 	// char *op = argv[1];
 	// mkdir("results", 0777 );
