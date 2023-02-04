@@ -24,15 +24,30 @@ namespace FGPRS
 		unsigned smCount;
 		unsigned long queueDuration;
 
-		MyContext();
-		MyContext(unsigned);
+		MyContext(){}
+		MyContext(unsigned, bool = false);
 		bool initialize();
-		bool select(double duration);
+		bool select();
 		static bool selectDefault();
-		bool release(double duration);
+		bool release();
 		bool destroy();
 		void lock();
 		void unlock();
+	};	
+
+	struct ContextData
+	{
+		MyContext context;
+		double isolatedExecutionTime, occupiedExecutionTime;
+		int smCount;
+
+		ContextData(MyContext context, double isolatedExecutionTime, double occupiedExecutionTime)
+		{
+			this->context = context;
+			smCount = context.smCount;
+			this->isolatedExecutionTime = isolatedExecutionTime;
+			this->occupiedExecutionTime = occupiedExecutionTime;
+		}
 	};
 }
 

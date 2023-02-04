@@ -15,17 +15,9 @@ using namespace FGPRS;
 using namespace std;
 using namespace torch;
 
-MyContext::MyContext()
+MyContext::MyContext(unsigned smCount, bool isDefault)
 {
-	_default = true;
-	this->smCount = Scheduler::maxSmCount;
-	queueDuration = 0;
-	_pMutex = new mutex();
-}
-
-MyContext::MyContext(unsigned smCount)
-{
-	_default = false;
+	_default = isDefault;
 	this->smCount = smCount;
 	queueDuration = 0;
 	_pMutex = new mutex();
@@ -44,15 +36,10 @@ bool MyContext::initialize()
 	return result == CUDA_SUCCESS;
 }
 
-bool MyContext::select(double duration)
+bool MyContext::select()
 {
-	queueDuration += (unsigned long)(duration * 1000000);
-
 	if (_default)
 		return MyContext::selectDefault();
-	
-	// if (busy)
-	// 	return false;
 
 	busy = true;
 
@@ -64,12 +51,9 @@ bool MyContext::selectDefault()
 	return cuCtxSetCurrent(0) == CUDA_SUCCESS;
 }
 
-bool MyContext::release(double duration)
+bool MyContext::release()
 {
-	queueDuration -= (unsigned long)(duration * 1000000);
 	busy = false;
-	// cuCtxSynchronize();
-	// torch::cuda::synchronize();
 	return selectDefault();
 }
 
