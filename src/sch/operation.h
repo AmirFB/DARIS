@@ -29,7 +29,7 @@ namespace FGPRS
 		Sequential _sequential;
 		shared_ptr<Tensor> _output;
 		vector<ContextData> _contextData;
-		double _isolatedScalability, _occupiedScalability, _predictability, _predictability2;
+		double _isolatedScalability, _occupiedScalability, _predictability;
 		double _relativeDeadline;
 		double _absoulteDeadline;
 
@@ -156,18 +156,7 @@ namespace FGPRS
 			_isolatedScalability /= 3;
 			_occupiedScalability /= 3;
 
-			double dot = 0, normA = 0, normB = 0;
-
-			for (auto data : _contextData)
-			{
-				dot += data.occupiedExecutionTime / data.isolatedExecutionTime;
-				normA += pow(1, 2);
-				normB += pow(data.occupiedExecutionTime / data.isolatedExecutionTime, 2);
-			}
-
-			_predictability2 = dot / (sqrt(normA) * sqrt(normB));
-
-			cout << endl << "Params: " << _predictability << "\t" << _predictability2 << "\t" << _isolatedScalability << "\t" << _occupiedScalability << endl << endl;
+			cout << endl << "Params: " << _predictability << "\t" << _isolatedScalability << "\t" << _occupiedScalability << endl << endl;
 
 			return output;
 		}

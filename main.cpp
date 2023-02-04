@@ -48,11 +48,10 @@ int main(int argc, char** argv)
 	int smOptions[] = {4, 10, 18, 32, 36, 50, 58, 64};
 	vector<int> realOptions{4, 10, 18, 36};
 	Scheduler::initialize(smOptions, 8);
-	// c10::cuda::CUDACachingAllocator::emptyCache();
 
 	Tensor dummyData1 = torch::ones({1, 3, 224, 224}, kCUDA);
 	Tensor dummyData2 = torch::ones({1, 3, 2048, 2048}, kCUDA);
-	auto res = resnet158(1000);
+	auto res = resnet152(1000);
 	
 	res->eval();
 	res->to(kCUDA);
