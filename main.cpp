@@ -1,37 +1,37 @@
-# include <iostream>
-# include <fstream>
-# include <iomanip>
-# include <thread>
-# include <pthread.h>
-# include <chrono>
-# include <string>
-# include <cstdlib>
-# include <future> 
-# include <sys/stat.h>
+#include <iostream>
+#include <fstream>
+#include <iomanip>
+#include <thread>
+#include <pthread.h>
+#include <chrono>
+#include <string>
+#include <cstdlib>
+#include <future>
+#include <sys/stat.h>
 
-# include <torch/torch.h>
-# include <torch/script.h>
-# include <c10/cuda/CUDAStream.h>
-# include <ATen/cuda/CUDAContext.h>
-# include <c10/cuda/CUDACachingAllocator.h>
+#include <torch/torch.h>
+#include <torch/script.h>
+#include <c10/cuda/CUDAStream.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDACachingAllocator.h>
 
-# include <cuda.h>
-# include <cudaTypedefs.h>
-# include <cuda_runtime.h>
+#include <cuda.h>
+#include <cudaTypedefs.h>
+#include <cuda_runtime.h>
 
-# include "ctx.h"
-# include "schd.h"
-# include "container.h"
+#include "ctx.h"
+#include "schd.h"
+#include "mod.h"
 
-# include "cif10.h"
-# include "operation.h"
-# include "resnet.h"
+#include "cif10.h"
+#include "mod.h"
+#include "resnet.h"
 
-# include "tests.h"
+#include "tests.h"
 
-# include <stdio.h>
-# include <stdlib.h>
-# include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #include <c10/cuda/CUDACachingAllocator.h>
 
@@ -41,7 +41,7 @@ using namespace torch;
 using namespace torch::nn;
 using namespace FGPRS;
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
 	NoGradGuard no_grad;
 
@@ -49,20 +49,24 @@ int main(int argc, char** argv)
 	vector<int> realOptions{4, 10, 18, 36};
 	Scheduler::initialize(smOptions, 8);
 
-	Tensor dummyData1 = torch::ones({1, 3, 224, 224}, kCUDA);
+	Tensor dummyData1 = torch::randn({1, 3, 22, 22}, kCUDA);
 	Tensor dummyData2 = torch::ones({1, 3, 2048, 2048}, kCUDA);
-	auto res = resnet152(1000);
-	
+	auto res = resnet18(10);
+
 	res->eval();
 	res->to(kCUDA);
 
 	Scheduler::selectDefaultContext();
-	// auto dummy = res->forward(dummyData1);
-	auto temp = res->analyze(dummyData1, realOptions);
-	cout << endl << endl << endl << endl << endl << endl << endl << endl << endl;
-	temp = res->analyze(dummyData1, realOptions);
-	cout << endl << endl << endl;
-	temp = res->analyze(dummyData2, realOptions);
+	cout << endl
+			 << endl
+			 << endl;
+	res->assignOperations();
+	cout << "Type: " << typeid(res).name() << endl;
+	cout << "Total Count: " << res->getOperations().size() << endl;
+	auto temp = res->analyze(1, 1, dummyData1, realOptions);
+	cout << temp[0] << endl;
+	temp = res->forward(dummyData1);
+	cout << temp[0] << endl;
 
 	// char *op = argv[1];
 	// mkdir("results", 0777 );
