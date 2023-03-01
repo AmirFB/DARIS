@@ -14,18 +14,19 @@ namespace FGPRS
 {
 	class MyContext
 	{
-		private:
+	private:
 		CUcontext _context;
 		bool _default;
 		mutable mutex* _pMutex;
 
-		public:
+	public:
 		bool busy = false;
 		unsigned smCount;
 		unsigned long queueDuration;
+		int index = -1;
 
-		MyContext(){}
-		MyContext(unsigned, bool = false);
+		MyContext() {}
+		MyContext(unsigned, int, bool = false);
 		bool initialize();
 		bool select();
 		static bool selectDefault();
@@ -33,20 +34,34 @@ namespace FGPRS
 		bool destroy();
 		void lock();
 		void unlock();
-	};	
+	};
 
 	struct ContextData
 	{
-		MyContext context;
+		MyContext* context;
 		double isolatedExecutionTime, occupiedExecutionTime;
 		int smCount;
 
-		ContextData(MyContext context, double isolatedExecutionTime, double occupiedExecutionTime)
+		ContextData(MyContext* context)
 		{
 			this->context = context;
-			smCount = context.smCount;
+			smCount = context->smCount;
+			isolatedExecutionTime = 0;
+			occupiedExecutionTime = 0;
+		}
+
+		ContextData(MyContext* context, double isolatedExecutionTime, double occupiedExecutionTime)
+		{
+			this->context = context;
+			smCount = context->smCount;
 			this->isolatedExecutionTime = isolatedExecutionTime;
 			this->occupiedExecutionTime = occupiedExecutionTime;
+		}
+
+		void stackExecutionTime(ContextData ctxData)
+		{
+			this->isolatedExecutionTime += ctxData.isolatedExecutionTime;
+			this->occupiedExecutionTime += ctxData.occupiedExecutionTime;
 		}
 	};
 }

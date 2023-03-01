@@ -1,50 +1,52 @@
-#include <mod.h>
+# include <mod.h>
 
-#include <schd.h>
-#include <ctx.h>
+# include <schd.h>
+# include <ctx.h>
 
-#include <torch/torch.h>
+# include <torch/torch.h>
 
-#include <chrono>
-#include <iostream>
-#include <unistd.h>
+# include <chrono>
+# include <iostream>
+# include <unistd.h>
+# include <future>
 
 using namespace std;
 using namespace std::chrono;
 using namespace FGPRS;
 
-Tensor Operation::analyze(int warmup, int repeat, Tensor input, vector<int> smOptions)
+string Operation::getName() { return _name; }
+string Operation::getFullName() { return _fullName; }
+
+void Operation::setName(string name)
+{
+	_name = name;
+	_fullName = name;
+}
+
+void Operation::setParentName(string parentName)
+{
+	if (_lastParentName != parentName)
+	{
+		_fullName = parentName + "->" + _fullName;
+		_lastParentName = parentName;
+	}
+}
+
+Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 {
 	Tensor output;
 	bool first = true;
 	steady_clock::time_point t1, t2, tStart, tEnd, tNow;
 	int countIsolated, countOccupied;
 
-	// if (_type == SEQUENTIAL)
-	// {
-	// 	// return dynamic_cast<MyModule>(_sequential[0]).analyze();
-	// 	cout << "---------------" << _sequential->name() << "-----------------\n";
-	// 	cout << "---------------" << typeid(_sequential).name() << "-----------------\n";
-	// 	// cout << "---------------" << _sequential[1]->name() << "-----------------\n";
-	// 	// cout << "---------------" << typeid(_sequential[1]).name() << "-----------------\n";
-	// 	// cout << "---------------" << _sequential[2]->name() << "-----------------\n";
-	// 	// cout << "---------------" << typeid(_sequential[2]).name() << "-----------------\n";
-	// 	// return _sequential.analyze(warmup, repeat, input, smOptions);
-
-	// 	// auto dummy = dynamic_cast<MyModule *>(_sequential[0].get());
-	// 	// output = _sequential.analyze(warmup, repeat, input, smOptions);
-	// 	return output;
-	// 	// return _sequential.analyze(warmup, repeat, input, smOptions);
-	// }
-
-	_predictability = 0;
-	_isolatedScalability = 0;
-	_occupiedScalability = 0;
+	predictability = 0;
+	isolatedScalability = 0;
+	occupiedScalability = 0;
 
 	cout << _fullName << ":" << endl;
 
 	Scheduler::selectDefaultContext();
-	_contextData.clear();
+	contextData.clear();
 
 	tStart = steady_clock::now();
 	tEnd = tStart + milliseconds(warmup);
@@ -57,10 +59,10 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input, vector<int> smOp
 			break;
 	}
 
-	for (auto sm : smOptions)
+	for (auto sm : Scheduler::smOptions)
 	{
 		auto ctx = Scheduler::selectContext(sm);
-		ctx.select();
+		ctx->select();
 
 		tStart = steady_clock::now();
 		tEnd = tStart + milliseconds(warmup);
@@ -89,10 +91,10 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input, vector<int> smOp
 
 		duration<double> d1 = tNow - tStart;
 
-		ctx.release();
-		auto doom = Scheduler::startDummy(68 - sm);
-		usleep(10000);
-		ctx.select();
+		ctx->release();
+		Scheduler::startDummy(ctx);
+		usleep(1000);
+		ctx->select();
 
 		countOccupied = 0;
 		tStart = steady_clock::now();
@@ -111,14 +113,13 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input, vector<int> smOp
 		duration<double> d2 = tNow - tStart;
 
 		Scheduler::stopDummy();
+		ctx->release();
 
-		ctx.release();
+		contextData.push_back(ContextData(ctx, d1.count() / countIsolated * 1000000, d2.count() / countOccupied * 1000000));
+		cout << "\t" << ctx->smCount << "\t" << contextData.back().isolatedExecutionTime << "us"
+			<< ", " << contextData.back().occupiedExecutionTime << "us";
 
-		_contextData.push_back(ContextData(ctx, d1.count() / countIsolated * 1000000, d2.count() / countOccupied * 1000000));
-		cout << "\t" << ctx.smCount << "\t" << _contextData.back().isolatedExecutionTime << "us"
-				 << ", " << _contextData.back().occupiedExecutionTime << "us";
-
-		_predictability += 1 - (_contextData.back().occupiedExecutionTime - _contextData.back().isolatedExecutionTime) / _contextData.back().occupiedExecutionTime;
+		predictability += 1 - (contextData.back().occupiedExecutionTime - contextData.back().isolatedExecutionTime) / contextData.back().occupiedExecutionTime;
 
 		if (first)
 		{
@@ -128,21 +129,60 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input, vector<int> smOp
 
 		double desired, isolatedGain, occupiedGain;
 
-		desired = (double)_contextData.back().smCount / _contextData.end()[-2].smCount;
-		isolatedGain = _contextData.end()[-2].isolatedExecutionTime / _contextData.back().isolatedExecutionTime;
-		occupiedGain = _contextData.end()[-2].occupiedExecutionTime / _contextData.back().occupiedExecutionTime;
+		desired = (double)contextData.back().smCount / contextData.end()[-2].smCount;
+		isolatedGain = contextData.end()[-2].isolatedExecutionTime / contextData.back().isolatedExecutionTime;
+		occupiedGain = contextData.end()[-2].occupiedExecutionTime / contextData.back().occupiedExecutionTime;
 
-		_isolatedScalability += max((isolatedGain - 1) / (desired - 1), 0.0);
-		_occupiedScalability += max((occupiedGain - 1) / (desired - 1), 0.0);
+		isolatedScalability += max((isolatedGain - 1) / (desired - 1), 0.0);
+		occupiedScalability += max((occupiedGain - 1) / (desired - 1), 0.0);
 	}
 
-	_predictability /= 4;
-	_isolatedScalability /= 3;
-	_occupiedScalability /= 3;
+	predictability /= 4;
+	isolatedScalability /= 3;
+	occupiedScalability /= 3;
 
 	cout << endl
-			 << "Params: " << _predictability << "\t" << _isolatedScalability << "\t" << _occupiedScalability << endl
-			 << endl;
+		<< "Params: " << predictability << "\t" << isolatedScalability << "\t" << occupiedScalability << endl
+		<< endl;
 
 	return output;
+}
+
+void thrdFunction(Sequential* sequential, Tensor* input)
+{
+	*input = (*sequential)->forward(*input);
+}
+
+void Operation::start(Tensor input)
+{
+	auto _sync = async(launch::async, thrdFunction, &_sequential, &input);
+}
+
+Tensor Operation::getResult()
+{
+	return _pAsync->get();
+}
+
+Tensor Operation::runAsync(Tensor input)
+{
+	auto th = async(launch::async, thrdFunction, &_sequential, &input);
+	th.get();
+	return input;
+}
+
+Tensor Operation::runSync(Tensor input)
+{
+	return _sequential->forward(input);
+}
+
+Tensor Operation::runThread(Tensor input)
+{
+	auto th = thread(thrdFunction, &_sequential, &input);
+	th.join();
+	return input;
+}
+
+double Operation::getRegulatedExecutionTime(int contextIndex)
+{
+	return contextData[contextIndex].occupiedExecutionTime * (1 - occupiedScalability);
 }

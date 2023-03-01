@@ -1,14 +1,14 @@
-#ifndef __CONTAINER__
-#define __CONTAINER__
+# ifndef __CONTAINER__
+# define __CONTAINER__
 
-#include <ctx.h>
+# include <ctx.h>
 
-#include <torch/torch.h>
+# include <torch/torch.h>
 
-#include <chrono>
-#include <future>
-
-#include <stdio.h>
+# include <chrono>
+# include <future>
+# include <stdio.h>
+# include <memory>
 
 using namespace torch;
 using namespace torch::nn;
@@ -18,67 +18,24 @@ using namespace std::chrono;
 
 namespace FGPRS
 {
-	class Operation;
-
-	class MyModule : public Module
-	{
-	private:
-		time_point<steady_clock> _lastArrival;
-		vector<Operation> _operations;
-
-	public:
-		double *executionTime;
-		int interval;
-
-		MyModule() : Module() {}
-		MyModule(const MyModule &container) : Module(container) {}
-
-		Tensor forward(Tensor);
-		Tensor analyze(int warmup, int repeat, Tensor dummyData, vector<int> smOptions);
-
-		template <typename ModuleType>
-		void addOperation(string name, shared_ptr<ModuleType> module)
-		{
-			auto operation = Operation(name, module);
-			_operations.push_back(operation);
-		}
-
-		virtual void assignOperations() {}
-		vector<Operation> getOperations();
-		void addOperations(vector<Operation> operations);
-		void addOperations(string parentName, vector<Operation> operations);
-	};
-
-	class MySequential : public MyModule, public ModuleHolder<SequentialImpl>
-	{
-	public:
-		using ModuleHolder<SequentialImpl>::ModuleHolder;
-
-		MySequential() : ModuleHolder() {}
-		MySequential(initializer_list<NamedAnyModule> named_modules) : ModuleHolder(make_shared<SequentialImpl>(move(named_modules))) {}
-	};
-
 	class Operation
 	{
 	private:
-		string _name;
-		string _fullName;
+		string _name, _fullName, _lastParentName;
 		Sequential _sequential;
 		shared_ptr<Tensor> _output;
-		vector<ContextData> _contextData;
-		double _isolatedScalability, _occupiedScalability, _predictability;
-		double _relativeDeadline;
-		double _absoulteDeadline;
+		shared_ptr<future<Tensor>> _pAsync;
 
 	public:
+		double relativeDeadline[3], stackedDeadline[3], _dynamicDeadline;
+		double isolatedScalability, occupiedScalability, predictability;
+		vector<ContextData> contextData;
+
 		Operation() {}
-		string getName() { return _name; }
-		void setName(string name)
-		{
-			_name = name;
-			_fullName = name;
-		}
-		void setParentName(string parentName) { _fullName = parentName + "->" + _fullName; }
+		string getName();
+		string getFullName();
+		void setName(string name);
+		void setParentName(string parentName);
 
 		template <typename ModuleType>
 		Operation(string name, shared_ptr<ModuleType> module)
@@ -88,12 +45,144 @@ namespace FGPRS
 			_sequential = Sequential(module);
 		}
 
-		Tensor analyze(int warmup, int repeat, Tensor input, vector<int> smOptions);
-		bool isBasic();
-		bool isComplex();
-		bool isSequential();
-		void assign();
+		Tensor analyze(int warmup, int repeat, Tensor input);
+
+		void start(Tensor input);
+		Tensor runAsync(Tensor input);
+		Tensor getResult();
+		Tensor runSync(Tensor input);
+		Tensor runThread(Tensor input);
+		double getRegulatedExecutionTime(int contextIndex);
+	};
+
+	class MyContainer: public Module
+	{
+	private:
+		time_point<steady_clock> _lastArrival;
+
+	public:
+		vector<vector<shared_ptr<Operation>>> operations
+			= { vector<shared_ptr<Operation>>() , vector<shared_ptr<Operation>>() , vector<shared_ptr<Operation>>() };
+		double* executionTime;
+		int interval;
+		double deadlineQuota, regulatedExecutionTime[3];
+
+		vector<shared_ptr<MyContainer>> _containers;
+		int _maxLevel = 0;
+
+		vector<vector<ContextData>> contextData
+			= { vector<ContextData>(), vector<ContextData>(), vector<ContextData>() };
+
+		MyContainer(): Module() {}
+		MyContainer(const MyContainer& container): Module(container) {}
+
+		virtual void assignOperations() {}
+		vector<shared_ptr<Operation>> getOperations(int level);
+
+		void copyOperations(string parentName, MyContainer& container, int level = 1);
+
+		void addOperations(vector<Operation> operations);
+		void addOperations(string parentName, vector<Operation> operations);
+
+		void addOperations(vector<Operation> operations, int level);
+		void addOperations(string parentName, vector<Operation> operations, int level);
+
+		virtual Tensor forward(Tensor input) { return input; }
+
+		void analyze(int warmup, int repeat, Tensor input);
+		virtual Tensor analyze(int warmup, int repeat, Tensor input, int level);
+
+		void assignExecutionTime(int contextIndex);
+		virtual double assignExecutionTime(int level, int contextIndex, double executionTimetack);
+
+		void assignDeadline(double quota, int contextIndex);
+		virtual double assignDeadline(double quota, int level, int contextIndex, double deadlineStack);
+
+		template <typename ModuleType>
+		shared_ptr<Operation> addOperation(string name, shared_ptr<ModuleType> module, int level = 0)
+		{
+			auto operation = make_shared<Operation>(name, module);
+
+			if (level == 0 || level == 1)
+				operations[0].push_back(operation);
+
+			if (level == 0 || level == 2)
+				operations[1].push_back(operation);
+
+			if (level == 0 || level == 3)
+				operations[2].push_back(operation);
+
+			return operation;
+		}
+	};
+
+	class MySequential: public MyContainer, public ModuleHolder<SequentialImpl>
+	{
+	public:
+		using ModuleHolder<SequentialImpl>::ModuleHolder;
+
+		MySequential(): ModuleHolder() {}
+		MySequential(initializer_list<NamedAnyModule> named_modules): ModuleHolder(make_shared<SequentialImpl>(move(named_modules))) {}
+
+		void setLevel(int level) { _maxLevel = level; }
+
+		void addContainer(shared_ptr<MyContainer> container)
+		{
+			_containers.push_back(container);
+		}
+
+		void copyOperations(string parentName, MyContainer& container, int level = 1)
+		{
+			MyContainer::copyOperations(parentName, container, level);
+
+			_maxLevel = container._maxLevel;
+			_containers.insert(_containers.end(), container._containers.begin(), container._containers.end());
+		}
+
+		Tensor analyze(int warmup, int repeat, Tensor input, int level) override
+		{
+			if (level > _maxLevel || _containers.size() == 0)
+				return MyContainer::analyze(warmup, repeat, input, level);
+
+			for (auto cont : _containers)
+				input = cont->analyze(warmup, repeat, input, level);
+
+			return input;
+		}
+
+		double assignExecutionTime(int level, int contextIndex, double executionTimeStack)
+		{
+			double tempStack = 0, elapsedTime = 0, tempElapsed;
+
+			if (level > _maxLevel || _containers.size() == 0)
+				return MyContainer::assignExecutionTime(level, contextIndex, executionTimeStack);
+
+			for (auto cont : _containers)
+			{
+				tempStack = cont->assignExecutionTime(level, contextIndex, executionTimeStack);
+				tempElapsed = tempStack - executionTimeStack;
+				elapsedTime += tempElapsed;
+				executionTimeStack = tempStack;
+			}
+
+			level--;
+			regulatedExecutionTime[level] = elapsedTime;
+			return executionTimeStack;
+		}
+
+		double assignDeadline(double quota, int level, int contextIndex, double deadlineStack) override
+		{
+			if (level > _maxLevel || _containers.size() == 0)
+				return MyContainer::assignDeadline(quota, level, contextIndex, deadlineStack);
+
+			level--;
+
+			for (auto cont : _containers)
+				deadlineStack = cont->assignDeadline((cont->regulatedExecutionTime[level] / regulatedExecutionTime[level]) * quota, level + 1, contextIndex, deadlineStack);
+
+			return deadlineStack;
+		}
 	};
 }
 
-#endif
+# endif
