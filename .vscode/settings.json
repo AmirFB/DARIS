@@ -96,6 +96,10 @@
 		"__functional_base": "cpp",
 		"locale": "cpp",
 		"__bit_reference": "cpp",
-		"ranges": "cpp"
+		"ranges": "cpp",
+		"__locale": "cpp",
+		"ios": "cpp",
+		"matrixfunctions": "cpp",
+		"alignedvector3": "cpp"
 	}
 }

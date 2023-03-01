@@ -106,7 +106,7 @@ void testSpeedup(char** argv)
 	tend = tstart + milliseconds(timer);
 
 	auto ctxD = Scheduler::selectContext(68);
-	ctxD.select();
+	ctxD->select();
 
 	while (true)
 	{
@@ -120,8 +120,8 @@ void testSpeedup(char** argv)
 			break;
 	}
 	
-	ctxD.release();
-	ctx.select();
+	ctxD->release();
+	ctx->select();
 
 	while (true)
 	{
@@ -135,13 +135,13 @@ void testSpeedup(char** argv)
 			break;
 	}
 	
-	ctx.release();
+	ctx->release();
 	
 	steady_clock::time_point t1, t2;
 	duration<double> d;
 	vector<double> results(MODULE_COUNT);
 
-	ctx.select();
+	ctx->select();
 
 	for (int j = 0; j < MODULE_COUNT; j++)
 	{
@@ -171,7 +171,7 @@ void testSpeedup(char** argv)
 		// cout << "Aff: " << affinity.param.smCount.val << endl;
 	}
 
-	ctx.release();
+	ctx->release();
 	cout << "Saving results\n";
 	writeToFile("speedup", smCount, results);
 	cout << "-------------------------------------------------------------------------------\n\n";
