@@ -5,6 +5,7 @@
 # include <future>
 # include <ranges>
 # include <vector>
+# include <unistd.h>
 
 # include <cuda.h>
 # include <cudaTypedefs.h>
@@ -17,12 +18,11 @@ using namespace std;
 int Scheduler::maxSmCount;
 bool Scheduler::_stopDummy;
 vector<int> Scheduler::smOptions;
-vector<MyContext> Scheduler::_contextPool;
+MyContext* Scheduler::_contextPool;
 MyContext Scheduler::_defaultContext;
-Sequential Scheduler::_dummyModule(Conv2d(Conv2dOptions(3, 7, 7).stride(2).padding(1)));
-Tensor Scheduler::_dummyInput = torch::randn({3, 2048, 2048}, kCUDA);
-Sequential Scheduler::_dummyModule2(Linear(256, 1000));
-Tensor Scheduler::_dummyInput2 = torch::randn(256, kCUDA);
+
+Sequential Scheduler::_dummyModule[3];
+Tensor Scheduler::_dummyInput[3];
 
 bool Scheduler::initialize(int options[], int size)
 {
@@ -32,38 +32,53 @@ bool Scheduler::initialize(int options[], int size)
 	cudaGetDeviceProperties(&prop, 0);
 	maxSmCount = prop.multiProcessorCount;
 
+	_contextPool = (MyContext*)malloc(sizeof(MyContext) * size);
+
+	for (int i = 0; i < (size - 1); i++)
+	{
+		_dummyInput[i] = torch::randn({ 1, 3, 3200, 480 }, kCUDA);
+		_dummyModule[i] = Sequential(
+			Conv2d(Conv2dOptions(3, 16, 7).stride(2).padding(3)),
+			BatchNorm2d(16),
+			ReLU(),
+			MaxPool2d(MaxPool2dOptions(2))
+		);
+
+		_dummyModule[i]->eval();
+		_dummyModule[i]->to(kCUDA);
+	}
+
 	for (int i = 0; i < size; i++)
 	{
 		smOptions.push_back(max(options[i], 1));
-		_contextPool.push_back(MyContext(options[i]));
-		result &= _contextPool.back().initialize();
+		_contextPool[i] = MyContext(options[i], i);
+		result &= _contextPool[i].initialize();
 	}
 
-	_defaultContext = MyContext(maxSmCount, true);
+	selectDefaultContext();
+
 	return result;
 }
 
-MyContext Scheduler::selectContext(int smCount)
+MyContext* Scheduler::selectContext(int smCount)
 {
-	for (auto context : _contextPool)
-		if (context.smCount >= smCount && !context.busy)
-			return context;
+	for (int i = 0; i < smOptions.size(); i++)
+		if (_contextPool[i].smCount >= smCount && !_contextPool[i].busy)
+			return &_contextPool[i];
 
-	for (auto context : _contextPool)// | views::reverse)
-		if (!context.busy)
-			return context;
-	
-	// cout << "Going NULL: " << smCount << ", " << poolSize << endl;
+	for (int i = 0; i < smOptions.size(); i++)
+		if (!_contextPool[i].busy)
+			return &_contextPool[i];
 
-	for (auto context : _contextPool)
-		cout << "\t" << context.smCount << ", " << context.busy << endl;
+	for (int i = 0; i < smOptions.size(); i++)
+		cout << "\t" << _contextPool[i].smCount << ", " << _contextPool[i].busy << endl;
 
-	return _defaultContext;
+	return &_defaultContext;
 }
 
-MyContext Scheduler::selectContextByIndex(int index)
+MyContext* Scheduler::selectContextByIndex(int index)
 {
-	return _contextPool[index];
+	return &_contextPool[index];
 }
 
 MyContext Scheduler::selectContextByQueueLoad(double* executionTime)
@@ -71,12 +86,12 @@ MyContext Scheduler::selectContextByQueueLoad(double* executionTime)
 	double min = _contextPool[0].queueDuration + executionTime[_contextPool[0].smCount] * 1000000;
 	MyContext output = _contextPool[0];
 
-	for (auto context : _contextPool)
+	for (int i = 0; i < smOptions.size(); i++)
 	{
-		if ((context.queueDuration + executionTime[context.smCount] * 1000000) < min)
+		if ((_contextPool[i].queueDuration + executionTime[_contextPool[i].smCount] * 1000000) < min)
 		{
-			output = context;
-			min = context.queueDuration + executionTime[context.smCount] * 1000000;
+			output = _contextPool[i];
+			min = _contextPool[i].queueDuration + executionTime[_contextPool[i].smCount] * 1000000;
 		}
 	}
 
@@ -96,16 +111,7 @@ bool Scheduler::releaseContext(MyContext context)
 bool Scheduler::destroyAll()
 {
 	bool result = true;
-
-	// for (int i = 0; i < (poolSize - 1); i++)
-	// 	result &= _contextPool[i].destroy();
-	
 	return true;
-}
-
-vector<MyContext> Scheduler::getAllContexts()
-{
-	return _contextPool;
 }
 
 float Scheduler::getTotalMemoryMB()
@@ -137,51 +143,50 @@ float Scheduler::getMemoryPercentage()
 	return Scheduler::getFreeMemoryMB() / Scheduler::getTotalMemoryMB() * 100;
 }
 
-void Scheduler::dummyFunction(MyContext ctx)
+mutex mtx;
+
+void Scheduler::dummyFunction(MyContext* ctx, Sequential* mod, Tensor* in)
 {
-	ctx.select();
+	int counter = 0;
+	ctx->select();
 
 	while (!_stopDummy)
 	{
-		auto dummy = _dummyModule->forward(_dummyInput);
-		dummy = _dummyModule2->forward(_dummyInput2);
+		auto dummy = (*mod)->forward(*in);
+		counter++;
 	}
 
-	ctx.release();
+	ctx->release();
 }
 
-bool first = true;
-future<void> th;
+future<void> Scheduler::th[3];
 
-int Scheduler::startDummy(int sms)
+void Scheduler::startDummy(MyContext* ctx)
 {
-	if (first)
-	{
-		first = false;
-		_dummyModule->eval();
-		_dummyModule->to(kCUDA);
-		_dummyModule2->eval();
-		_dummyModule2->to(kCUDA);
-	}
-
+	int index = 0;
 	_stopDummy = false;
-	auto ctx = selectContext(sms);
 
-	Scheduler::selectDefaultContext();
-	auto dummy = _dummyModule->forward(_dummyInput);
-	dummy = _dummyModule2->forward(_dummyInput2);
+	for (int i = 0; i < smOptions.size(); i++)
+	{
+		if (_contextPool[i].index == ctx->index)
+			continue;
 
-	ctx.select();
-	dummy = _dummyModule->forward(_dummyInput);
-	dummy = _dummyModule2->forward(_dummyInput2);
-	ctx.release();
+		Scheduler::selectDefaultContext();
+		auto dummy = _dummyModule[index]->forward(_dummyInput[index]);
 
-	th = async(dummyFunction, ctx);
-	return ctx.smCount;
+		_contextPool[i].select();
+		dummy = _dummyModule[index]->forward(_dummyInput[index]);
+		_contextPool[i].release();
+
+		th[index] = async(launch::async, dummyFunction, &_contextPool[i], &_dummyModule[index], &_dummyInput[index]);
+		index++;
+	}
 }
 
 void Scheduler::stopDummy()
 {
 	_stopDummy = true;
-	th.get();
+
+	for (int i = 0; i < 3; i++)
+		th[i].get();
 }

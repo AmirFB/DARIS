@@ -6,6 +6,7 @@
 # include <chrono>
 # include <cstdint>
 # include <vector>
+# include <future>
 
 # include <torch/torch.h>
 
@@ -16,24 +17,23 @@ namespace FGPRS
 {
 	class Scheduler
 	{
-		public:
+	public:
 		const int MAX_CONTEXT_COUNT = 48;
 		static int maxSmCount;
 		static vector<int> smOptions;
 		static bool _stopDummy;
 
 	private:
-		static vector<MyContext> _contextPool;
+		static MyContext* _contextPool;
 		static MyContext _defaultContext;
-		static Sequential _dummyModule;
-		static Tensor _dummyInput;
-		static Sequential _dummyModule2;
-		static Tensor _dummyInput2;
+		static Sequential _dummyModule[3];
+		static Tensor _dummyInput[3];
+		static future<void> th[3];
 
-		public:
+	public:
 		static bool initialize(int[], int);
-		static MyContext selectContext(int);
-		static MyContext selectContextByIndex(int index);
+		static MyContext* selectContext(int);
+		static MyContext* selectContextByIndex(int index);
 		static MyContext selectContextByQueueLoad(double* executionTime);
 		static bool selectDefaultContext();
 		static bool releaseContext(MyContext);
@@ -47,8 +47,8 @@ namespace FGPRS
 		static float getFreeMemoryGB();
 		static float getMemoryPercentage();
 
-		static void dummyFunction(MyContext ctx);
-		static int startDummy(int);
+		static void dummyFunction(MyContext* ctx, Sequential* mod, Tensor* in);
+		static void startDummy(MyContext* ctx);
 		static void stopDummy();
 	};
 }
