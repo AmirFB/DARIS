@@ -15,12 +15,13 @@ using namespace FGPRS;
 using namespace std;
 using namespace torch;
 
-MyContext::MyContext(unsigned smCount, bool isDefault)
+MyContext::MyContext(unsigned smCount, int index, bool isDefault)
 {
 	_default = isDefault;
 	this->smCount = smCount;
 	queueDuration = 0;
 	_pMutex = new mutex();
+	this->index = index;
 }
 
 bool MyContext::initialize()
