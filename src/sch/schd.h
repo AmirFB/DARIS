@@ -28,7 +28,7 @@ namespace FGPRS
 		static MyContext _defaultContext;
 		static Sequential _dummyModule[3];
 		static Tensor _dummyInput[3];
-		static future<void> th[3];
+		static future<void> _th[3];
 
 	public:
 		static bool initialize(int[], int);

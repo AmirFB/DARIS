@@ -159,7 +159,7 @@ void Scheduler::dummyFunction(MyContext* ctx, Sequential* mod, Tensor* in)
 	ctx->release();
 }
 
-future<void> Scheduler::th[3];
+future<void> Scheduler::_th[3];
 
 void Scheduler::startDummy(MyContext* ctx)
 {
@@ -178,7 +178,7 @@ void Scheduler::startDummy(MyContext* ctx)
 		dummy = _dummyModule[index]->forward(_dummyInput[index]);
 		_contextPool[i].release();
 
-		th[index] = async(launch::async, dummyFunction, &_contextPool[i], &_dummyModule[index], &_dummyInput[index]);
+		_th[index] = async(launch::async, dummyFunction, &_contextPool[i], &_dummyModule[index], &_dummyInput[index]);
 		index++;
 	}
 }
@@ -188,5 +188,5 @@ void Scheduler::stopDummy()
 	_stopDummy = true;
 
 	for (int i = 0; i < 3; i++)
-		th[i].get();
+		_th[i].get();
 }
