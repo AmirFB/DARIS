@@ -91,12 +91,6 @@ bool Scheduler::releaseContext(MyContext context)
 	return context.release();
 }
 
-bool Scheduler::destroyAll()
-{
-	bool result = true;
-	return true;
-}
-
 float Scheduler::getTotalMemoryMB()
 {
 	size_t free, total;

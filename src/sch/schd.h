@@ -36,7 +36,6 @@ namespace FGPRS
 		static MyContext* selectContextByIndex(int index);
 		static bool selectDefaultContext();
 		static bool releaseContext(MyContext);
-		static bool destroyAll();
 
 		static vector<MyContext> getAllContexts();
 

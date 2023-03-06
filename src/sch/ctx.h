@@ -38,7 +38,6 @@ namespace FGPRS
 		bool select();
 		static bool selectDefault();
 		bool release();
-		bool destroy();
 		void lock();
 		void unlock();
 

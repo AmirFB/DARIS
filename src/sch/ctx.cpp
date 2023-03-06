@@ -58,16 +58,6 @@ bool MyContext::release()
 	return selectDefault();
 }
 
-bool MyContext::destroy()
-{
-	selectDefault();
-
-	if (_default)
-		return true;
-
-	return cuCtxDestroy(_context) == CUDA_SUCCESS;
-}
-
 void MyContext::lock()
 {
 	_pMutex->lock();
