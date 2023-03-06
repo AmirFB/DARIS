@@ -1,7 +1,8 @@
 # ifndef __CONTAINER__
 # define __CONTAINER__
 
-# include <ctx.h>
+# include <ctxd.h>
+# include <operation.h>
 
 # include <torch/torch.h>
 
@@ -18,43 +19,6 @@ using namespace std::chrono;
 
 namespace FGPRS
 {
-	class Operation
-	{
-	private:
-		string _name, _fullName, _lastParentName;
-		Sequential _sequential;
-		shared_ptr<Tensor> _output;
-		shared_ptr<future<Tensor>> _pAsync;
-
-	public:
-		double relativeDeadline[3], stackedDeadline[3], _dynamicDeadline;
-		double isolatedScalability, occupiedScalability, predictability;
-		vector<ContextData> contextData;
-
-		Operation() {}
-		string getName();
-		string getFullName();
-		void setName(string name);
-		void setParentName(string parentName);
-
-		template <typename ModuleType>
-		Operation(string name, shared_ptr<ModuleType> module)
-		{
-			_name = name;
-			_fullName = name;
-			_sequential = Sequential(module);
-		}
-
-		Tensor analyze(int warmup, int repeat, Tensor input);
-
-		void start(Tensor input);
-		Tensor runAsync(Tensor input);
-		Tensor getResult();
-		Tensor runSync(Tensor input);
-		Tensor runThread(Tensor input);
-		double getRegulatedExecutionTime(int contextIndex);
-	};
-
 	class MyContainer: public Module
 	{
 	private:
@@ -97,6 +61,7 @@ namespace FGPRS
 
 		void assignDeadline(double quota, int contextIndex);
 		virtual double assignDeadline(double quota, int level, int contextIndex, double deadlineStack);
+		void setAbsoluteDeadline(int level, steady_clock::time_point start);
 
 		template <typename ModuleType>
 		shared_ptr<Operation> addOperation(string name, shared_ptr<ModuleType> module, int level = 0)

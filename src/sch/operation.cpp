@@ -1,6 +1,7 @@
-# include <mod.h>
+# include <operation.h>
+
+# include <ctxd.h>
 # include <schd.h>
-# include <ctx.h>
 
 # include <torch/torch.h>
 
@@ -171,19 +172,14 @@ void thrdFunction(Sequential* sequential, Tensor* input)
 
 void Operation::start(Tensor input)
 {
-	auto _sync = async(launch::async, thrdFunction, &_sequential, &input);
+	_output = &input;
+	_th = thread(thrdFunction, &_sequential, &input);
 }
 
 Tensor Operation::getResult()
 {
-	return _pAsync->get();
-}
-
-Tensor Operation::runAsync(Tensor input)
-{
-	auto th = async(launch::async, thrdFunction, &_sequential, &input);
-	th.get();
-	return input;
+	_th.join();
+	return *_output;
 }
 
 Tensor Operation::runSync(Tensor input)
@@ -191,14 +187,13 @@ Tensor Operation::runSync(Tensor input)
 	return _sequential->forward(input);
 }
 
-Tensor Operation::runThread(Tensor input)
-{
-	auto th = thread(thrdFunction, &_sequential, &input);
-	th.join();
-	return input;
-}
-
 double Operation::getRegulatedExecutionTime(int contextIndex)
 {
 	return contextData[contextIndex].occupiedExecutionTime * (1 - occupiedScalability);
+}
+
+void Operation::setAbsoluteDeadline(int level, steady_clock::time_point start)
+{
+	absoluteDeadline = start + microseconds((int)stackedDeadline[level - 1]);
+	cout << getFullName() << "->" << duration_cast<milliseconds>(absoluteDeadline.time_since_epoch()).count() << endl;
 }
