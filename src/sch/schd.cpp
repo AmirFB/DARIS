@@ -32,7 +32,7 @@ bool Scheduler::initialize(int options[], int size)
 	cudaGetDeviceProperties(&prop, 0);
 	maxSmCount = prop.multiProcessorCount;
 
-	_contextPool = (MyContext*)malloc(sizeof(MyContext) * size);
+	_contextPool = new MyContext[size];
 
 	for (int i = 0; i < (size - 1); i++)
 	{
@@ -79,23 +79,6 @@ MyContext* Scheduler::selectContext(int smCount)
 MyContext* Scheduler::selectContextByIndex(int index)
 {
 	return &_contextPool[index];
-}
-
-MyContext Scheduler::selectContextByQueueLoad(double* executionTime)
-{
-	double min = _contextPool[0].queueDuration + executionTime[_contextPool[0].smCount] * 1000000;
-	MyContext output = _contextPool[0];
-
-	for (int i = 0; i < smOptions.size(); i++)
-	{
-		if ((_contextPool[i].queueDuration + executionTime[_contextPool[i].smCount] * 1000000) < min)
-		{
-			output = _contextPool[i];
-			min = _contextPool[i].queueDuration + executionTime[_contextPool[i].smCount] * 1000000;
-		}
-	}
-
-	return output;
 }
 
 bool Scheduler::selectDefaultContext()

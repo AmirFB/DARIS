@@ -34,7 +34,6 @@ namespace FGPRS
 		static bool initialize(int[], int);
 		static MyContext* selectContext(int);
 		static MyContext* selectContextByIndex(int index);
-		static MyContext selectContextByQueueLoad(double* executionTime);
 		static bool selectDefaultContext();
 		static bool releaseContext(MyContext);
 		static bool destroyAll();
