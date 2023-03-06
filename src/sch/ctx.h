@@ -42,8 +42,8 @@ namespace FGPRS
 		void lock();
 		void unlock();
 
-		void addOperation(shared_ptr<Operation> operation);
-		void removeOperation();
+		void queueOperation(shared_ptr<Operation> operation);
+		void dequeueOperation();
 		steady_clock::time_point getFinishTime();
 	};
 

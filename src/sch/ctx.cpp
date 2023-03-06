@@ -78,13 +78,13 @@ void MyContext::unlock()
 	_pMutex->unlock();
 }
 
-void MyContext::addOperation(shared_ptr<Operation> operation)
+void MyContext::queueOperation(shared_ptr<Operation> operation)
 {
 	_changed = true;
 	_queue.push_back(operation);
 }
 
-void MyContext::removeOperation()
+void MyContext::dequeueOperation()
 {
 	_changed = true;
 	_queue.pop_front();
