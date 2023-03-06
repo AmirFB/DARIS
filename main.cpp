@@ -19,15 +19,14 @@
 # include <cudaTypedefs.h>
 # include <cuda_runtime.h>
 
-# include "ctx.h"
-# include "schd.h"
-# include "mod.h"
+# include <schd.h>
+# include <mod.h>
 
-# include "cif10.h"
-# include "mod.h"
-# include "resnet.h"
+# include <cif10.h>
+# include <mod.h>
+# include <resnet.h>
 
-# include "tests.h"
+# include <tests.h>
 
 # include <stdio.h>
 # include <stdlib.h>
@@ -82,6 +81,15 @@ int main(int argc, char** argv)
 	res->assignDeadline(30000, 3, 3, 0);
 	res->assignDeadline(30000, 2, 3, 0);
 	res->assignDeadline(30000, 1, 3, 0);
+	size_t a, b, c;
+	a = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+	b = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+	c = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+	a = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+	b = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+	c = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+	cout << "Here: " << c - b << endl;
+	res->setAbsoluteDeadline(1, steady_clock::now());
 	// res->analyze(10, 50, dummyData2, 1);
 	// res->analyze(10, 50, dummyData1);
 
