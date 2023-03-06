@@ -72,11 +72,11 @@ int main(int argc, char** argv)
 
 	Scheduler::selectDefaultContext();
 
-	res->analyze(1, 1, dummyData1, 3);
+	res->analyze(5, 10, dummyData1, 3);
 	cout << endl << endl;
-	res->analyze(1, 1, dummyData1, 2);
+	res->analyze(5, 10, dummyData1, 2);
 	cout << endl << endl;
-	res->analyze(1, 1, dummyData1, 1);
+	res->analyze(5, 10, dummyData1, 1);
 
 	res->assignExecutionTime(3);
 	res->assignDeadline(30000, 3, 3, 0);

@@ -1,5 +1,4 @@
 # include <mod.h>
-
 # include <schd.h>
 # include <ctx.h>
 
@@ -51,43 +50,53 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 	tStart = steady_clock::now();
 	tEnd = tStart + milliseconds(warmup);
 
-	while (true)
-	{
-		output = _sequential->forward(input);
+	// while (true)
+	// {
+	// 	output = _sequential->forward(input);
 
-		if (tEnd <= steady_clock::now())
-			break;
-	}
+	// 	if (tEnd <= steady_clock::now())
+	// 		break;
+	// }
+
+	for (int i = 0; i < warmup; i++)
+		output = _sequential->forward(input);
 
 	for (auto sm : Scheduler::smOptions)
 	{
 		auto ctx = Scheduler::selectContext(sm);
 		ctx->select();
 
-		tStart = steady_clock::now();
-		tEnd = tStart + milliseconds(warmup);
+		// tStart = steady_clock::now();
+		// tEnd = tStart + milliseconds(warmup);
 
-		while (true)
-		{
+		// while (true)
+		// {
+		// 	output = _sequential->forward(input);
+
+		// 	if (tEnd <= steady_clock::now())
+		// 		break;
+		// }
+
+		// countIsolated = 0;
+		// tStart = steady_clock::now();
+		// tEnd = tStart + milliseconds(repeat);
+
+		// while (true)
+		// {
+		// 	output = _sequential->forward(input);
+		// 	countIsolated++;
+		// 	tNow = steady_clock::now();
+
+		// 	if (tEnd <= tNow)
+		// 		break;
+		// }
+
+		tStart = steady_clock::now();
+
+		for (int i = 0; i < repeat; i++)
 			output = _sequential->forward(input);
 
-			if (tEnd <= steady_clock::now())
-				break;
-		}
-
-		countIsolated = 0;
-		tStart = steady_clock::now();
-		tEnd = tStart + milliseconds(repeat);
-
-		while (true)
-		{
-			output = _sequential->forward(input);
-			countIsolated++;
-			tNow = steady_clock::now();
-
-			if (tEnd <= tNow)
-				break;
-		}
+		tNow = steady_clock::now();
 
 		duration<double> d1 = tNow - tStart;
 
@@ -100,22 +109,29 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 		tStart = steady_clock::now();
 		tEnd = tStart + milliseconds(repeat);
 
-		while (true)
-		{
-			output = _sequential->forward(input);
-			countOccupied++;
-			tNow = steady_clock::now();
+		// while (true)
+		// {
+		// 	output = _sequential->forward(input);
+		// 	countOccupied++;
+		// 	tNow = steady_clock::now();
 
-			if (tEnd <= tNow)
-				break;
-		}
+		// 	if (tEnd <= tNow)
+		// 		break;
+		// }
+
+		tStart = steady_clock::now();
+
+		for (int i = 0; i < repeat; i++)
+			output = _sequential->forward(input);
+
+		tNow = steady_clock::now();
 
 		duration<double> d2 = tNow - tStart;
 
 		Scheduler::stopDummy();
 		ctx->release();
 
-		contextData.push_back(ContextData(ctx, d1.count() / countIsolated * 1000000, d2.count() / countOccupied * 1000000));
+		contextData.push_back(ContextData(ctx, d1.count() / repeat * 1000000, d2.count() / repeat * 1000000));
 		cout << "\t" << ctx->smCount << "\t" << contextData.back().isolatedExecutionTime << "us"
 			<< ", " << contextData.back().occupiedExecutionTime << "us";
 
