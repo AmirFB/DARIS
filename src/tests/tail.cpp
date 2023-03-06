@@ -17,9 +17,9 @@
 # include <cudaTypedefs.h>
 # include <cuda_runtime.h>
 
-# include "tests.h"
-# include "ctx.h"
-# include "schd.h"
+# include <tests.h>
+// # include <ctx.h>
+# include <schd.h>
 
 using namespace std;
 using namespace std::chrono;
