@@ -1,14 +1,15 @@
+
 # include <mod.h>
 
 # include <schd.h>
-# include <ctx.h>
+# include <ctxd.h>
 
 # include <torch/torch.h>
 
 # include <iostream>
 # include <chrono>
 # include <thread>
-#  include <unistd.h>
+# include <unistd.h>
 
 using namespace torch;
 using namespace torch::nn;
@@ -109,4 +110,10 @@ double MyContainer::assignDeadline(double quota, int level, int contextIndex, do
 	}
 
 	return deadlineStack;
+}
+
+void MyContainer::setAbsoluteDeadline(int level, steady_clock::time_point start)
+{
+	for (auto op : operations[level - 1])
+		op->setAbsoluteDeadline(level, start);
 }
