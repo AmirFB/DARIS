@@ -22,7 +22,7 @@ namespace FGPRS
 		CUcontext _context;
 		bool _default;
 		mutable mutex* _pMutex;
-		deque<shared_ptr<Operation>> _queue;
+		deque<Operation*> _queue;
 		bool _changed = true;
 		steady_clock::time_point _finishTime;
 
@@ -41,39 +41,10 @@ namespace FGPRS
 		void lock();
 		void unlock();
 
-		void queueOperation(shared_ptr<Operation> operation);
+		void queueOperation(Operation* operation);
 		void dequeueOperation();
 		steady_clock::time_point getFinishTime();
 	};
-
-	// struct ContextData
-	// {
-	// 	MyContext* context;
-	// 	double isolatedExecutionTime, occupiedExecutionTime;
-	// 	int smCount;
-
-	// 	ContextData(MyContext* context)
-	// 	{
-	// 		this->context = context;
-	// 		smCount = context->smCount;
-	// 		isolatedExecutionTime = 0;
-	// 		occupiedExecutionTime = 0;
-	// 	}
-
-	// 	ContextData(MyContext* context, double isolatedExecutionTime, double occupiedExecutionTime)
-	// 	{
-	// 		this->context = context;
-	// 		smCount = context->smCount;
-	// 		this->isolatedExecutionTime = isolatedExecutionTime;
-	// 		this->occupiedExecutionTime = occupiedExecutionTime;
-	// 	}
-
-	// 	void stackExecutionTime(ContextData ctxData)
-	// 	{
-	// 		this->isolatedExecutionTime += ctxData.isolatedExecutionTime;
-	// 		this->occupiedExecutionTime += ctxData.occupiedExecutionTime;
-	// 	}
-	// };
 }
 
 # endif
