@@ -34,7 +34,7 @@ namespace FGPRS
 		static bool initialize(int[], int);
 		static MyContext* selectContext(int);
 		static MyContext* selectContextByIndex(int index);
-		static bool selectDefaultContext();
+		static MyContext* selectDefaultContext();
 		static bool releaseContext(MyContext);
 
 		static vector<MyContext> getAllContexts();
@@ -48,6 +48,8 @@ namespace FGPRS
 		static void dummyFunction(MyContext* ctx, Sequential* mod, Tensor* in);
 		static void startDummy(MyContext* ctx);
 		static void stopDummy();
+
+		static MyContext* getBestContext(Operation* operation);
 	};
 }
 

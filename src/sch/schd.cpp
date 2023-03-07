@@ -81,9 +81,9 @@ MyContext* Scheduler::selectContextByIndex(int index)
 	return &_contextPool[index];
 }
 
-bool Scheduler::selectDefaultContext()
+MyContext* Scheduler::selectDefaultContext()
 {
-	return MyContext::selectDefault();
+	return &_defaultContext;
 }
 
 bool Scheduler::releaseContext(MyContext context)
@@ -166,4 +166,27 @@ void Scheduler::stopDummy()
 
 	for (int i = 0; i < 3; i++)
 		_th[i].get();
+}
+
+MyContext* Scheduler::getBestContext(Operation* operation)
+{
+	MyContext* ctx;
+	steady_clock::time_point earliest = steady_clock::now() + seconds(1);
+	steady_clock::time_point temp;
+
+	for (int i = 0; i < smOptions.size(); i++)
+	{
+		temp = _contextPool[i].getFinishTime() + microseconds((int)operation->contextData[i].occupiedExecutionTime);
+
+		if (temp < operation->absoluteDeadline)
+			return &_contextPool[i];
+
+		if (temp < earliest)
+		{
+			earliest = temp;
+			ctx = &_contextPool[i];
+		}
+	}
+
+	return ctx;
 }
