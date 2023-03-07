@@ -14,6 +14,8 @@ using namespace std;
 using namespace std::chrono;
 using namespace FGPRS;
 
+double Operation::exceptionThreshold = 0.15;
+
 string Operation::getName() { return _name; }
 string Operation::getFullName() { return _fullName; }
 
@@ -51,51 +53,18 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 	tStart = steady_clock::now();
 	tEnd = tStart + milliseconds(warmup);
 
-	// while (true)
-	// {
-	// 	output = _sequential->forward(input);
-
-	// 	if (tEnd <= steady_clock::now())
-	// 		break;
-	// }
-
 	for (int i = 0; i < warmup; i++)
-		output = _sequential->forward(input);
+		output = sequential->forward(input);
 
 	for (auto sm : Scheduler::smOptions)
 	{
 		auto ctx = Scheduler::selectContext(sm);
 		ctx->select();
 
-		// tStart = steady_clock::now();
-		// tEnd = tStart + milliseconds(warmup);
-
-		// while (true)
-		// {
-		// 	output = _sequential->forward(input);
-
-		// 	if (tEnd <= steady_clock::now())
-		// 		break;
-		// }
-
-		// countIsolated = 0;
-		// tStart = steady_clock::now();
-		// tEnd = tStart + milliseconds(repeat);
-
-		// while (true)
-		// {
-		// 	output = _sequential->forward(input);
-		// 	countIsolated++;
-		// 	tNow = steady_clock::now();
-
-		// 	if (tEnd <= tNow)
-		// 		break;
-		// }
-
 		tStart = steady_clock::now();
 
 		for (int i = 0; i < repeat; i++)
-			output = _sequential->forward(input);
+			output = sequential->forward(input);
 
 		tNow = steady_clock::now();
 
@@ -110,20 +79,10 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 		tStart = steady_clock::now();
 		tEnd = tStart + milliseconds(repeat);
 
-		// while (true)
-		// {
-		// 	output = _sequential->forward(input);
-		// 	countOccupied++;
-		// 	tNow = steady_clock::now();
-
-		// 	if (tEnd <= tNow)
-		// 		break;
-		// }
-
 		tStart = steady_clock::now();
 
 		for (int i = 0; i < repeat; i++)
-			output = _sequential->forward(input);
+			output = sequential->forward(input);
 
 		tNow = steady_clock::now();
 
@@ -165,26 +124,51 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 	return output;
 }
 
-void thrdFunction(Sequential* sequential, Tensor* input)
+void thrdFunction(Operation* operation, Tensor* input, MyContext* context)
 {
-	*input = (*sequential)->forward(*input);
+	context->queueOperation(operation);
+	*input = operation->sequential->forward(*input);
+	context->dequeueOperation();
 }
 
 void Operation::start(Tensor input)
 {
 	_output = &input;
-	_th = thread(thrdFunction, &_sequential, &input);
+	_chosenContext = Scheduler::getBestContext(this);
+	_th = thread(thrdFunction, this, &input, Scheduler::selectContextByIndex(0));
 }
 
 Tensor Operation::getResult()
 {
-	_th.join();
+	if (!_isException)
+		_th.join();
+
 	return *_output;
 }
 
 Tensor Operation::runSync(Tensor input)
 {
-	return _sequential->forward(input);
+	input = sequential->forward(input);
+	_output = &input;
+	return input;
+}
+
+void Operation::schedule(Tensor input)
+{
+	if (occupiedScalability < exceptionThreshold)
+	{
+		_isException = true;
+		_chosenContext = Scheduler::selectDefaultContext();
+		_chosenContext->select();
+		runSync(input);
+		_chosenContext->release();
+	}
+
+	else
+	{
+		_isException = false;
+		start(input);
+	}
 }
 
 double Operation::getRegulatedExecutionTime(int contextIndex)

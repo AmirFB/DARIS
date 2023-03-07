@@ -22,11 +22,15 @@ namespace FGPRS
 	{
 	private:
 		string _name, _fullName, _lastParentName;
-		Sequential _sequential;
 		thread _th;
 		Tensor* _output;
+		MyContext* _chosenContext;
+		bool _isException;
+
+		static double exceptionThreshold;
 
 	public:
+		Sequential sequential;
 		double relativeDeadline[3], stackedDeadline[3];
 		steady_clock::time_point absoluteDeadline;
 		double isolatedScalability, occupiedScalability, predictability;
@@ -44,7 +48,7 @@ namespace FGPRS
 		{
 			_name = name;
 			_fullName = name;
-			_sequential = Sequential(module);
+			sequential = Sequential(module);
 		}
 
 		Tensor analyze(int warmup, int repeat, Tensor input);
@@ -52,6 +56,9 @@ namespace FGPRS
 		void start(Tensor input);
 		Tensor getResult();
 		Tensor runSync(Tensor input);
+
+		void schedule(Tensor input);
+
 		double getRegulatedExecutionTime(int contextIndex);
 		void setAbsoluteDeadline(int level, steady_clock::time_point start);
 	};
