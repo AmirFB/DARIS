@@ -5,8 +5,8 @@
 # include <torch/torch.h>
 
 # include <ctxd.h>
-// # include <ctx.h>
-# include <mod.h>
+# include <cnt.h>
+# include <sqnl.h>
 # include <schd.h>
 
 using namespace FGPRS;

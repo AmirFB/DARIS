@@ -20,10 +20,10 @@
 # include <cuda_runtime.h>
 
 # include <schd.h>
-# include <mod.h>
+# include <cnt.h>
 
 # include <cif10.h>
-# include <mod.h>
+# include <cnt.h>
 # include <resnet.h>
 
 # include <tests.h>
