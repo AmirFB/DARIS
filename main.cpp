@@ -21,6 +21,7 @@
 
 # include <schd.h>
 # include <cnt.h>
+# include <loop.h>
 
 # include <cif10.h>
 # include <cnt.h>
@@ -55,6 +56,8 @@ int main(int argc, char** argv)
 	res->to(kCUDA);
 	res->assignOperations();
 
+	auto loop = Loop(res, 250);
+
 	for (int i = 0; i < 10; i++)
 	{
 		Scheduler::selectDefaultContext();
@@ -69,6 +72,10 @@ int main(int argc, char** argv)
 		}
 	}
 
+	loop.start(&dummyData1);
+
+	this_thread::sleep_for(seconds(100));
+
 	Scheduler::selectDefaultContext();
 
 	res->analyze(5, 10, dummyData1, 3);
@@ -81,7 +88,9 @@ int main(int argc, char** argv)
 	res->assignDeadline(30000, 3, 3, 0);
 	res->assignDeadline(30000, 2, 3, 0);
 	res->assignDeadline(30000, 1, 3, 0);
+
 	size_t a, b, c;
+
 	a = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
 	b = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
 	c = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
