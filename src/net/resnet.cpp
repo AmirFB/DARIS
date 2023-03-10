@@ -113,6 +113,29 @@ struct BasicBlock: public MyContainer
 		return out;
 	}
 
+	Tensor schedule(Tensor input, int level) override
+	{
+		Tensor output;
+
+		if (!m_downsample->is_empty())
+			o_downsample->startSchedule(input);
+
+		output = o_conv1->scheduleSync(input);
+		output = o_bn1->scheduleSync(output);
+		output = o_relu1->scheduleSync(output);
+
+		output = o_conv2->scheduleSync(output);
+		output = o_bn2->scheduleSync(output);
+
+		if (!m_downsample->is_empty())
+			input = o_downsample->getResult();
+
+		output += input;
+		output = o_relu2->scheduleSync(output);
+
+		return output;
+	}
+
 	void assignOperations()
 	{
 		o_conv1 = addOperation("conv1", m_conv1.ptr());
@@ -572,6 +595,36 @@ struct ResNet: public MyContainer
 	}
 
 	Tensor forward(Tensor x) { return _forward_impl(x); }
+
+	Tensor schedule(Tensor input, int level) override
+	{
+		input = o_conv1->scheduleSync(input);
+		input = o_bn1->scheduleSync(input);
+		input = o_relu->scheduleSync(input);
+		input = o_maxpool->scheduleSync(input);
+
+		if (level == 3)
+		{
+			input = o_layer1->scheduleSync(input);
+			input = o_layer2->scheduleSync(input);
+			input = o_layer3->scheduleSync(input);
+			input = o_layer4->scheduleSync(input);
+		}
+
+		else
+		{
+			input = m_layer1.schedule(input, level);
+			input = m_layer2.schedule(input, level);
+			input = m_layer3.schedule(input, level);
+			input = m_layer4.schedule(input, level);
+		}
+
+		input = o_avgpool->scheduleSync(input);
+		input = flatten(input, 1);
+		input = o_fc->scheduleSync(input);
+
+		return input;
+	}
 
 	void assignOperations()
 	{

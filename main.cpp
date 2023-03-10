@@ -56,9 +56,7 @@ int main(int argc, char** argv)
 	res->to(kCUDA);
 	res->assignOperations();
 
-	auto loop = Loop(res, 250);
-
-	for (int i = 0; i < 10; i++)
+	for (int i = 0; i < 1; i++)
 	{
 		Scheduler::selectDefaultContext();
 		res->forward(dummyData1);
@@ -72,33 +70,20 @@ int main(int argc, char** argv)
 		}
 	}
 
-	loop.start(&dummyData1);
-
-	this_thread::sleep_for(seconds(100));
-
 	Scheduler::selectDefaultContext();
 
-	res->analyze(5, 10, dummyData1, 3);
+	res->analyze(1, 1, dummyData1, 3);
 	cout << endl << endl;
-	res->analyze(5, 10, dummyData1, 2);
+	res->analyze(1, 1, dummyData1, 2);
 	cout << endl << endl;
-	res->analyze(5, 10, dummyData1, 1);
+	res->analyze(1, 1, dummyData1, 1);
 
 	res->assignExecutionTime(3);
-	res->assignDeadline(30000, 3, 3, 0);
-	res->assignDeadline(30000, 2, 3, 0);
-	res->assignDeadline(30000, 1, 3, 0);
 
-	size_t a, b, c;
+	auto loop = Loop(res, 200);
+	loop.start(&dummyData1, 3);
 
-	a = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
-	b = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
-	c = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
-	a = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
-	b = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
-	c = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
-	cout << "Here: " << c - b << endl;
-	res->setAbsoluteDeadline(1, steady_clock::now());
+	this_thread::sleep_for(seconds(100));
 	// res->analyze(10, 50, dummyData2, 1);
 	// res->analyze(10, 50, dummyData1);
 

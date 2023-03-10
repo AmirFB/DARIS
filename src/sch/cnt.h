@@ -52,6 +52,7 @@ namespace FGPRS
 		void addOperations(string parentName, vector<Operation> operations, int level);
 
 		virtual Tensor forward(Tensor input) { return input; }
+		virtual Tensor schedule(Tensor input, int level);
 
 		void analyze(int warmup, int repeat, Tensor input);
 		virtual Tensor analyze(int warmup, int repeat, Tensor input, int level);

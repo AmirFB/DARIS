@@ -19,6 +19,17 @@ void MySequential::copyOperations(string parentName, MyContainer& container, int
 	containers.insert(containers.end(), container.containers.begin(), container.containers.end());
 }
 
+Tensor MySequential::schedule(Tensor input, int level)
+{
+	if (level > _maxLevel || containers.size() == 0)
+		return MyContainer::schedule(input, level);
+
+	for (auto cont : containers)
+		input = cont->schedule(input, level);
+
+	return input;
+}
+
 Tensor MySequential::analyze(int warmup, int repeat, Tensor input, int level)
 {
 	if (level > _maxLevel || containers.size() == 0)

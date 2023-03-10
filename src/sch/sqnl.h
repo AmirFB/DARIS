@@ -31,6 +31,7 @@ namespace FGPRS
 		void setLevel(int level);
 		void addContainer(shared_ptr<MyContainer> container);
 		void copyOperations(string parentName, MyContainer& container, int level = 1);
+		Tensor schedule(Tensor input, int level) override;
 		Tensor analyze(int warmup, int repeat, Tensor input, int level) override;
 		double assignExecutionTime(int level, int contextIndex, double executionTimeStack);
 		double assignDeadline(double quota, int level, int contextIndex, double deadlineStack) override;

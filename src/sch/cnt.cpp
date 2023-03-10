@@ -51,8 +51,11 @@ void MyContainer::copyOperations(string parentName, MyContainer& container, int 
 	}
 }
 
-Tensor forward(Tensor input)
+Tensor MyContainer::schedule(Tensor input, int level)
 {
+	for (auto op : operations[level])
+		input = op->runSync(input);
+
 	return input;
 }
 
