@@ -23,15 +23,20 @@ Loop::Loop(shared_ptr<MyContainer> container, double frequency)
 // {
 // }
 
-void run(shared_ptr<MyContainer> container, Tensor* input, double period, bool* stop)
+void run(shared_ptr<MyContainer> container, Tensor* input, double period, bool* stop, int level)
 {
 	int frame = 0;
 	steady_clock::time_point startTime = steady_clock::now(), nextTime;
 	auto interval = nanoseconds((int)round(period));
 
+	container->assignDeadline(period / 1000, 3, 3, 0);
+	container->assignDeadline(period / 1000, 2, 3, 0);
+	container->assignDeadline(period / 1000, 1, 3, 0);
+
 	while (!*stop)
 	{
-		container->forward(*input);
+		container->setAbsoluteDeadline(level, nextTime);
+		container->schedule(*input, level);
 
 		nextTime = startTime + interval * ++frame;
 
@@ -48,10 +53,10 @@ void run(shared_ptr<MyContainer> container, Tensor* input, double period, bool* 
 	}
 }
 
-void Loop::start(Tensor* input)
+void Loop::start(Tensor* input, int level)
 {
 	_stop = false;
-	_th = thread(run, _container, input, _period, &_stop);
+	_th = thread(run, _container, input, _period, &_stop, level);
 }
 
 void Loop::stop()
