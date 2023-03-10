@@ -135,7 +135,7 @@ void Operation::start(Tensor input)
 {
 	_output = &input;
 	_chosenContext = Scheduler::getBestContext(this);
-	_th = thread(thrdFunction, this, &input, Scheduler::selectContextByIndex(0));
+	_th = thread(thrdFunction, this, &input, _chosenContext);
 }
 
 Tensor Operation::getResult()
@@ -153,7 +153,7 @@ Tensor Operation::runSync(Tensor input)
 	return input;
 }
 
-void Operation::schedule(Tensor input)
+void Operation::startSchedule(Tensor input)
 {
 	if (occupiedScalability < exceptionThreshold)
 	{
@@ -171,6 +171,28 @@ void Operation::schedule(Tensor input)
 	}
 }
 
+Tensor Operation::scheduleSync(Tensor input)
+{
+	if (occupiedScalability < exceptionThreshold)
+	{
+		_isException = true;
+		_chosenContext = Scheduler::selectDefaultContext();
+	}
+
+	else
+	{
+		_isException = false;
+		_chosenContext = Scheduler::getBestContext(this);
+	}
+
+	_chosenContext->select();
+	cout << _fullName << " started.\n";
+	input = runSync(input);
+	cout << _fullName << " finsished.\n";
+	_chosenContext->release();
+	return input;
+}
+
 double Operation::getRegulatedExecutionTime(int contextIndex)
 {
 	return contextData[contextIndex].occupiedExecutionTime * (1 - occupiedScalability);
@@ -179,5 +201,5 @@ double Operation::getRegulatedExecutionTime(int contextIndex)
 void Operation::setAbsoluteDeadline(int level, steady_clock::time_point start)
 {
 	absoluteDeadline = start + microseconds((int)stackedDeadline[level - 1]);
-	cout << getFullName() << "->" << duration_cast<milliseconds>(absoluteDeadline.time_since_epoch()).count() << endl;
+	// cout << getFullName() << "->" << duration_cast<milliseconds>(absoluteDeadline.time_since_epoch()).count() << endl;
 }

@@ -57,7 +57,8 @@ namespace FGPRS
 		Tensor getResult();
 		Tensor runSync(Tensor input);
 
-		void schedule(Tensor input);
+		void startSchedule(Tensor input);
+		Tensor scheduleSync(Tensor input);
 
 		double getRegulatedExecutionTime(int contextIndex);
 		void setAbsoluteDeadline(int level, steady_clock::time_point start);
