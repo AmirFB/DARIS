@@ -32,6 +32,7 @@ bool Scheduler::initialize(int options[], int size)
 	cudaGetDeviceProperties(&prop, 0);
 	maxSmCount = prop.multiProcessorCount;
 
+	_defaultContext = MyContext(maxSmCount, -1, true);
 	_contextPool = new MyContext[size];
 
 	for (int i = 0; i < (size - 1); i++)
@@ -188,5 +189,6 @@ MyContext* Scheduler::getBestContext(Operation* operation)
 		}
 	}
 
+	cout << "Zorake!\n";
 	return ctx;
 }
