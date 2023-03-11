@@ -53,8 +53,8 @@ void MyContainer::copyOperations(string parentName, MyContainer& container, int 
 
 Tensor MyContainer::schedule(Tensor input, int level)
 {
-	for (auto op : operations[level])
-		input = op->runSync(input);
+	for (auto op : operations[level - 1])
+		input = op->scheduleSync(input);
 
 	return input;
 }
