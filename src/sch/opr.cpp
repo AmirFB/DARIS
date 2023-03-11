@@ -186,7 +186,7 @@ Tensor Operation::scheduleSync(Tensor input)
 	}
 
 	_chosenContext->select();
-	cout << _fullName << " started.\n";
+	cout << _fullName << " started. (" << _chosenContext->smCount << ")\n";
 	input = runSync(input);
 	cout << _fullName << " finsished.\n";
 	_chosenContext->release();
