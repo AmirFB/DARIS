@@ -19,6 +19,7 @@ namespace FGPRS
 		Loop(shared_ptr<MyContainer> container, double _frequency);
 		// Loop(shared_ptr<MyContainer> container, double _period);
 
+		void initialize(int deadlineContextIndex, Tensor dummyInput);
 		void start(Tensor* input, int level);
 		void stop();
 	};

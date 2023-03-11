@@ -50,40 +50,17 @@ int main(int argc, char** argv)
 
 	auto dummyData1 = torch::randn({ 1, 3, 224, 224 }, kCUDA);
 	auto dummyData2 = torch::randn({ 1, 3, 2048, 2048 }, kCUDA);
+
+	int level = 2;
 	auto res = resnet18(1000);
+	auto loop = Loop(res, 50);
 
-	res->eval();
-	res->to(kCUDA);
-	res->assignOperations();
+	loop.initialize(level, dummyData1);
+	this_thread::sleep_for(seconds(2));
+	loop.start(&dummyData1, level);
 
-	for (int i = 0; i < 1; i++)
-	{
-		Scheduler::selectDefaultContext();
-		res->forward(dummyData1);
-
-		for (int j = 0; j < 4; j++)
-		{
-			auto ctx = Scheduler::selectContext(smOptions[j]);
-			ctx->select();
-			res->forward(dummyData1);
-			ctx->release();
-		}
-	}
-
-	Scheduler::selectDefaultContext();
-
-	res->analyze(1, 1, dummyData1, 3);
-	cout << endl << endl;
-	res->analyze(1, 1, dummyData1, 2);
-	cout << endl << endl;
-	res->analyze(1, 1, dummyData1, 1);
-
-	res->assignExecutionTime(3);
-
-	auto loop = Loop(res, 200);
-	loop.start(&dummyData1, 3);
-
-	this_thread::sleep_for(seconds(100));
+	this_thread::sleep_for(milliseconds(200));
+	loop.stop();
 	// res->analyze(10, 50, dummyData2, 1);
 	// res->analyze(10, 50, dummyData1);
 
