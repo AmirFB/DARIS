@@ -15,9 +15,9 @@
 # include <cudaTypedefs.h>
 # include <cuda_runtime.h>
 
-# include <tests.h>
-// # include <ctx.h>
-# include <schd.h>
+# include <tests.hpp>
+// # include <ctx.hpp>
+# include <schd.hpp>
 
 using namespace std;
 using namespace std::chrono;
@@ -30,7 +30,7 @@ using namespace FGPRS;
 void testSpeedup(char** argv)
 {
 	string moduleName[] = {
-		"CV", "FC", "BN", "RL", "MP", "AP", "DP", "DA"};
+		"CV", "FC", "BN", "RL", "MP", "AP", "DP", "DA" };
 	NoGradGuard no_grad;
 	Sequential mod[MODULE_COUNT];
 	Tensor in[MODULE_COUNT];
@@ -43,7 +43,7 @@ void testSpeedup(char** argv)
 	printf("Running \"Speedup\" simulation. (SM count: %d)\n", smCount);
 
 	mod[0] = Sequential(Conv2d(Conv2dOptions(512, 1024, 3).stride(2).padding(1)));
-	in[0] = torch::randn({512, 48, 48}, kCUDA);
+	in[0] = torch::randn({ 512, 48, 48 }, kCUDA);
 
 	// mod[1] = Sequential(Conv2d(Conv2dOptions(1024, 2048, 3).stride(2).padding(1)));
 	// in[1] = torch::randn({1024, 32, 32}, kCUDA);
@@ -57,29 +57,29 @@ void testSpeedup(char** argv)
 	// mod[1] = Sequential(Linear(4096, 1000));
 	// in[1] = torch::randn(4096, kCUDA);
 
-	mod[1] = Sequential(Linear(4096*4, 10000));
-	in[1] = torch::randn(4096*4, kCUDA);
+	mod[1] = Sequential(Linear(4096 * 4, 10000));
+	in[1] = torch::randn(4096 * 4, kCUDA);
 
 	// mod[3] = Sequential(Linear(4096, 1000));
 	// in[3] = torch::randn(4096, kCUDA);
 
 	mod[2] = Sequential(BatchNorm2d(1024));
-	in[2] = torch::randn({1, 1024, 32, 24}, kCUDA);
-		
+	in[2] = torch::randn({ 1, 1024, 32, 24 }, kCUDA);
+
 	mod[3] = Sequential(ReLU());
-	in[3] = torch::randn({1024, 32, 24}, kCUDA);
-		
+	in[3] = torch::randn({ 1024, 32, 24 }, kCUDA);
+
 	mod[4] = Sequential(MaxPool2d(MaxPool2dOptions(3).stride(2).padding(1)));
-	in[4] = torch::randn({64, 224, 224}, kCUDA);
-		
+	in[4] = torch::randn({ 64, 224, 224 }, kCUDA);
+
 	mod[5] = Sequential(AvgPool2d(AvgPool2dOptions(3).stride(2).padding(1)));
-	in[5] = torch::randn({64, 224, 224}, kCUDA);
+	in[5] = torch::randn({ 64, 224, 224 }, kCUDA);
 
 	mod[6] = Sequential(AdaptiveMaxPool2d(AdaptiveMaxPool2dOptions(1)));
-	in[6] = torch::randn({2048, 3, 3}, kCUDA);
+	in[6] = torch::randn({ 2048, 3, 3 }, kCUDA);
 
 	mod[7] = Sequential(AdaptiveAvgPool2d(AdaptiveAvgPool2dOptions(1)));
-	in[7] = torch::randn({2048, 3, 3}, kCUDA);
+	in[7] = torch::randn({ 2048, 3, 3 }, kCUDA);
 
 	for (int i = 0; i < MODULE_COUNT; i++)
 	{
@@ -87,8 +87,8 @@ void testSpeedup(char** argv)
 		mod[i]->to(kCUDA);
 	}
 
-	int options[] = {smCount};
-	
+	int options[] = { smCount };
+
 	if (!Scheduler::initialize(options, 1))
 	{
 		cout << "CUDA initialization failed.\n";
@@ -112,14 +112,14 @@ void testSpeedup(char** argv)
 	{
 		for (int j = 0; j < MODULE_COUNT; j++)
 			dummy = mod[j]->forward(in[j]);
-		
+
 		cuCtxSynchronize();
 		now = steady_clock::now();
 
 		if (tend <= steady_clock::now())
 			break;
 	}
-	
+
 	ctxD->release();
 	ctx->select();
 
@@ -127,16 +127,16 @@ void testSpeedup(char** argv)
 	{
 		for (int j = 0; j < MODULE_COUNT; j++)
 			dummy = mod[j]->forward(in[j]);
-		
+
 		cuCtxSynchronize();
 		now = steady_clock::now();
 
 		if (tend <= steady_clock::now())
 			break;
 	}
-	
+
 	ctx->release();
-	
+
 	steady_clock::time_point t1, t2;
 	duration<double> d;
 	vector<double> results(MODULE_COUNT);

@@ -12,7 +12,7 @@
 #include <torch/torch.h>
 #include <vector>
 
-#include <cif10.h>
+#include <cif10.hpp>
 
 const std::vector<std::string> train_set_file_names{
 	"data_batch_1.bin", "data_batch_2.bin", "data_batch_3.bin",

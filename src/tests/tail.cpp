@@ -17,9 +17,9 @@
 # include <cudaTypedefs.h>
 # include <cuda_runtime.h>
 
-# include <tests.h>
-// # include <ctx.h>
-# include <schd.h>
+# include <tests.hpp>
+// # include <ctx.hpp>
+# include <schd.hpp>
 
 using namespace std;
 using namespace std::chrono;
@@ -58,23 +58,23 @@ void testTailing(char** argv)
 	for (int i = 0; i < MODULE_COUNT; i++)
 	{
 		cnv[i] = Sequential(Conv2d(Conv2dOptions(512, 1024, 3).stride(2).padding(1)));
-		inc[i] = torch::randn({512, 48, 48}, kCUDA);
+		inc[i] = torch::randn({ 512, 48, 48 }, kCUDA);
 
-		lin[i] = Sequential(Linear(4096*4, 10000));
-		inl[i] = torch::randn(4096*4, kCUDA);
+		lin[i] = Sequential(Linear(4096 * 4, 10000));
+		inl[i] = torch::randn(4096 * 4, kCUDA);
 	}
 
 	for (int i = 0; i < MODULE_COUNT; i++)
 	{
 		cnv[i]->eval();
 		cnv[i]->to(kCUDA);
-		
+
 		lin[i]->eval();
 		lin[i]->to(kCUDA);
 	}
 
-	int options[] = {min(smCount, 68 - smCount), max(smCount, 68 - smCount)};
-	
+	int options[] = { min(smCount, 68 - smCount), max(smCount, 68 - smCount) };
+
 	if (!Scheduler::initialize(options, 2))
 	{
 		cout << "CUDA initialization failed.\n";
@@ -106,57 +106,57 @@ void testTailing(char** argv)
 			dummy = lin[i]->forward(inl[i]);
 			cuCtxSynchronize();
 			ctxD->release();
-			
+
 			ctx->select();
 			dummy = cnv[i]->forward(inc[i]);
 			dummy = lin[i]->forward(inl[i]);
 			cuCtxSynchronize();
 			ctx->release();
-			
+
 			ctxP->select();
 			dummy = cnv[i]->forward(inc[i]);
 			dummy = lin[i]->forward(inl[i]);
 			cuCtxSynchronize();
 			ctxP->release();
 		}
-		
+
 		cuCtxSynchronize();
 		now = steady_clock::now();
 
 		if (tend <= steady_clock::now())
 			break;
 	}
-	
+
 	vector<double> results(0), temp(0);
-	
+
 	temp = repeat(timer,
 		ctxP, cnv[2], inc[2],
 		ctxP, lin[2], inl[2],
 		ctx, cnv[0], inc[0],
 		ctx, cnv[1], inc[1]);
 	results.insert(results.end(), temp.begin(), temp.end());
-	
+
 	temp = repeat(timer,
 		ctxP, cnv[2], inc[2],
 		ctxP, lin[2], inl[2],
 		ctx, cnv[0], inc[0],
 		ctx, lin[1], inl[1]);
 	results.insert(results.end(), temp.begin(), temp.end());
-	
+
 	temp = repeat(timer,
 		ctxP, cnv[2], inc[2],
 		ctxP, lin[2], inl[2],
 		ctx, lin[0], inl[0],
 		ctx, cnv[1], inc[1]);
 	results.insert(results.end(), temp.begin(), temp.end());
-	
+
 	temp = repeat(timer,
 		ctxP, cnv[2], inc[2],
 		ctxP, lin[2], inl[2],
 		ctx, lin[0], inl[0],
 		ctx, lin[1], inl[1]);
 	results.insert(results.end(), temp.begin(), temp.end());
-	
+
 	cout << "Saving results\n";
 	writeToFile("tailing", smCount, results);
 	cout << "-------------------------------------------------------------------------------\n\n";
@@ -216,7 +216,7 @@ vector<double> repeat(int timer,
 
 				if (i < 2)
 					delay = delayLimit[i];
-				
+
 				else
 					srand(seed);
 
@@ -288,12 +288,12 @@ vector<double> run(int sync, bool dummy, int delay,
 
 	bool stop = (!dummy && ctxD->smCount > 1), finished = false;
 	auto thD = async(dummy_thrd, &stop, ctxD, modD, inD);
-	
+
 	t1 = steady_clock::now();
 	auto th1 = async(main_thrd, ctx1, mod1, in1);
 	usleep(delay);
 	auto th2 = async(tail_thrd, sync, ctx2, mod2, in2);
-	
+
 	th1.get();
 	t2 = steady_clock::now();
 	th2.get();
@@ -311,10 +311,10 @@ vector<double> run(int sync, bool dummy, int delay,
 void dummy_thrd(bool* stop, MyContext* ctx, Sequential mod, Tensor in)
 {
 	ctx->select();
-	
-	while(!*stop)
+
+	while (!*stop)
 		auto out = mod->forward(in);
-		
+
 	ctx->release();
 }
 
@@ -330,16 +330,16 @@ void main_thrd(MyContext* ctx, Sequential mod, Tensor in)
 void tail_thrd(int sync, MyContext* ctx, Sequential mod, Tensor in)
 {
 	ctx->select();
-	
+
 	if (sync == 1)
 		// cuCtxSynchronize();
 		return;
-	
+
 	else if (sync == 2)
 		ctx->lock();
 
 	auto out = mod->forward(in);
-	
+
 	if (sync == 2)
 		ctx->unlock();
 
