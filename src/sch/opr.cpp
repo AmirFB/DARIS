@@ -213,7 +213,7 @@ Tensor Operation::scheduleSync(string name, Tensor input)
 
 	auto now = startTime;
 	cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
-	printf("Executing     %s-->%s: %i: %li\n", name.c_str(), _fullName.c_str(), _chosenContext->smCount, _chosenContext->_queue.size());
+	printf("Executing     %s-->%s: %i: %li\n", name.c_str(), _fullName.c_str(), _chosenContext->smCount, _chosenContext->queue.size());
 
 	input = runSync(input);
 
