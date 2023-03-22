@@ -13,7 +13,3 @@ add_subdirectory(sch)
 target_include_directories(fgprs PUBLIC tests)
 include_directories(tests)
 add_subdirectory(tests)
-
-target_include_directories(fgprs PUBLIC third_party)
-include_directories(third_party)
-add_subdirectory(third_party)
