@@ -1,4 +1,4 @@
-# include <schd.h>
+# include <schd.hpp>
 
 # include <iostream>
 # include <thread>
@@ -6,6 +6,7 @@
 # include <ranges>
 # include <vector>
 # include <unistd.h>
+# include <mutex>
 
 # include <cuda.h>
 # include <cudaTypedefs.h>
@@ -37,7 +38,7 @@ bool Scheduler::initialize(int options[], int size)
 
 	for (int i = 0; i < (size - 1); i++)
 	{
-		_dummyInput[i] = torch::randn({ 1, 3, 3200, 480 }, kCUDA);
+		_dummyInput[i] = torch::randn({ 1, 3, 900, 1600 }, kCUDA);
 		_dummyModule[i] = Sequential(
 			Conv2d(Conv2dOptions(3, 16, 7).stride(2).padding(3)),
 			BatchNorm2d(16),
@@ -169,26 +170,75 @@ void Scheduler::stopDummy()
 		_th[i].get();
 }
 
+mutex globalMutex;
+
 MyContext* Scheduler::getBestContext(Operation* operation)
 {
-	MyContext* ctx;
-	steady_clock::time_point earliest = steady_clock::now() + seconds(1);
+	MyContext* ctx1 = NULL, * ctx2;
+	globalMutex.lock();
+
+	steady_clock::time_point earliest1 = steady_clock::now() + seconds(1), earliest2 = steady_clock::now() + seconds(1);
 	steady_clock::time_point temp;
+
+	for (int i = 0; i < smOptions.size(); i++)
+	{
+		if (!_contextPool[i].isEmpty())
+			continue;
+
+		temp = _contextPool[i].getFinishTime() + microseconds((int)operation->contextData[i].occupiedExecutionTime);
+
+		if (temp < operation->absoluteDeadline)
+		{
+			_contextPool[i].queueOperation(operation);
+			_contextPool[i].lock();
+			globalMutex.unlock();
+			return &_contextPool[i];
+		}
+	}
 
 	for (int i = 0; i < smOptions.size(); i++)
 	{
 		temp = _contextPool[i].getFinishTime() + microseconds((int)operation->contextData[i].occupiedExecutionTime);
 
 		if (temp < operation->absoluteDeadline)
-			return &_contextPool[i];
-
-		if (temp < earliest)
 		{
-			earliest = temp;
-			ctx = &_contextPool[i];
+			_contextPool[i].queueOperation(operation);
+			_contextPool[i].lock();
+			globalMutex.unlock();
+			return &_contextPool[i];
+		}
+
+		if (_contextPool[i].isEmpty() && temp < earliest1)
+		{
+			earliest1 = temp;
+			ctx1 = &_contextPool[i];
+		}
+
+		if (temp < earliest2)
+		{
+			earliest2 = temp;
+			ctx2 = &_contextPool[i];
 		}
 	}
 
 	cout << "Zorake!\n";
-	return ctx;
+
+	if (ctx1 != NULL)
+	{
+		ctx1->queueOperation(operation);
+		ctx1->lock();
+
+		globalMutex.unlock();
+		return ctx1;
+	}
+
+
+	else
+	{
+		ctx2->queueOperation(operation);
+		ctx2->lock();
+
+		globalMutex.unlock();
+		return ctx2;
+	}
 }

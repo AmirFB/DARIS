@@ -1,7 +1,7 @@
-# include <ctx.h>
+# include <ctx.hpp>
 
-# include <ctxd.h>
-# include <schd.h>
+# include <ctxd.hpp>
+# include <schd.hpp>
 
 # include <iostream>
 
@@ -27,7 +27,10 @@ MyContext::MyContext(unsigned smCount, int index, bool isDefault)
 bool MyContext::initialize()
 {
 	if (_default)
+	{
+		cuCtxGetCurrent(&_context);
 		return true;
+	}
 
 	CUexecAffinityParam_v1 affinity;
 	affinity.type = CU_EXEC_AFFINITY_TYPE_SM_COUNT;
@@ -49,7 +52,7 @@ bool MyContext::select()
 
 bool MyContext::selectDefault()
 {
-	return cuCtxSetCurrent(0) == CUDA_SUCCESS;
+	return cuCtxSetCurrent(NULL) == CUDA_SUCCESS;
 }
 
 bool MyContext::release()
@@ -71,18 +74,18 @@ void MyContext::unlock()
 void MyContext::queueOperation(Operation* operation)
 {
 	_changed = true;
-	_queue.push_back(operation);
+	queue.push_back(operation);
 }
 
 void MyContext::dequeueOperation()
 {
 	_changed = true;
-	_queue.pop_front();
+	queue.pop_front();
 }
 
 steady_clock::time_point MyContext::getFinishTime()
 {
-	if (_queue.size() == 0)
+	if (queue.size() == 0)
 		return steady_clock::now();
 
 	if (!_changed)
@@ -90,10 +93,15 @@ steady_clock::time_point MyContext::getFinishTime()
 
 	double sum = 0;
 
-	for (auto op : _queue)
+	for (auto op : queue)
 		sum += op->contextData[index].occupiedExecutionTime;
 
 	_changed = false;
-	_finishTime = _queue[0]->startTime + microseconds((int)sum);
+	_finishTime = queue[0]->startTime + microseconds((int)sum);
 	return _finishTime;
+}
+
+bool MyContext::isEmpty()
+{
+	return queue.size() == 0;
 }
