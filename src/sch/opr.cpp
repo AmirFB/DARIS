@@ -1,7 +1,7 @@
-# include <opr.h>
+# include <opr.hpp>
 
-# include <ctxd.h>
-# include <schd.h>
+# include <ctxd.hpp>
+# include <schd.hpp>
 
 # include <torch/torch.h>
 
@@ -45,7 +45,7 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 	isolatedScalability = 0;
 	occupiedScalability = 0;
 
-	cout << _fullName << ":" << endl;
+	// cout << _fullName << ":" << endl;
 
 	Scheduler::selectDefaultContext();
 	contextData.clear();
@@ -92,8 +92,8 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 		ctx->release();
 
 		contextData.push_back(ContextData(ctx, d1.count() / repeat * 1000000, d2.count() / repeat * 1000000));
-		cout << "\t" << ctx->smCount << "\t" << contextData.back().isolatedExecutionTime << "us"
-			<< ", " << contextData.back().occupiedExecutionTime << "us";
+		// cout << "\t" << ctx->smCount << "\t" << contextData.back().isolatedExecutionTime << "us"
+		// 	<< ", " << contextData.back().occupiedExecutionTime << "us";
 
 		predictability += 1 - (contextData.back().occupiedExecutionTime - contextData.back().isolatedExecutionTime) / contextData.back().occupiedExecutionTime;
 
@@ -117,9 +117,9 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 	isolatedScalability /= 3;
 	occupiedScalability /= 3;
 
-	cout << endl
-		<< "Params: " << predictability << "\t" << isolatedScalability << "\t" << occupiedScalability << endl
-		<< endl;
+	// cout << endl
+	// 	<< "Params: " << predictability << "\t" << isolatedScalability << "\t" << occupiedScalability << endl
+	// 	<< endl;
 
 	return output;
 }
@@ -153,15 +153,33 @@ Tensor Operation::runSync(Tensor input)
 	return input;
 }
 
-void Operation::startSchedule(Tensor input)
+void Operation::startSchedule(string name, Tensor input)
 {
-	if (occupiedScalability < exceptionThreshold)
+	auto now = steady_clock::now();
+
+	if (true)//occupiedScalability < exceptionThreshold)
 	{
 		_isException = true;
 		_chosenContext = Scheduler::selectDefaultContext();
+
 		_chosenContext->select();
+		_chosenContext->lock();
+		_chosenContext->queueOperation(this);
+
+		printf("%s-->%s: started.\n", name.c_str(), _fullName.c_str());
+
 		runSync(input);
+
+		printf("%s-->%s: %3i SMs\t %i -> %li + %li = %li \n",
+			name.c_str(), _fullName.c_str(), _chosenContext->smCount,
+			(int)contextData[_chosenContext->index].occupiedExecutionTime,
+			duration_cast<microseconds>(steady_clock::now() - now).count(),
+			duration_cast<microseconds>(absoluteDeadline - steady_clock::now()).count(),
+			duration_cast<microseconds>(absoluteDeadline - now).count());
+
+		_chosenContext->unlock();
 		_chosenContext->release();
+		_chosenContext->dequeueOperation();
 	}
 
 	else
@@ -171,12 +189,17 @@ void Operation::startSchedule(Tensor input)
 	}
 }
 
-Tensor Operation::scheduleSync(Tensor input)
+Tensor Operation::scheduleSync(string name, Tensor input)
 {
+	cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
+	printf("Starting     %s-->%s\n", name.c_str(), _fullName.c_str());
+
 	if (occupiedScalability < exceptionThreshold)
 	{
 		_isException = true;
 		_chosenContext = Scheduler::selectDefaultContext();
+		_chosenContext->queueOperation(this);
+		_chosenContext->lock();
 	}
 
 	else
@@ -185,11 +208,28 @@ Tensor Operation::scheduleSync(Tensor input)
 		_chosenContext = Scheduler::getBestContext(this);
 	}
 
+	startTime = steady_clock::now();
 	_chosenContext->select();
-	cout << _fullName << " started. (" << _chosenContext->smCount << ")\n";
+
+	auto now = startTime;
+	cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
+	printf("Executing     %s-->%s: %i: %li\n", name.c_str(), _fullName.c_str(), _chosenContext->smCount, _chosenContext->_queue.size());
+
 	input = runSync(input);
-	cout << _fullName << " finsished.\n";
+
+	cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
+	printf("FINISHED     %s-->%s: %3i SMs\t %i -> %li + %li = %li \n",
+		name.c_str(), _fullName.c_str(), _chosenContext->smCount,
+		(int)contextData[_chosenContext->index].occupiedExecutionTime,
+		duration_cast<microseconds>(steady_clock::now() - now).count(),
+		duration_cast<microseconds>(absoluteDeadline - steady_clock::now()).count(),
+		duration_cast<microseconds>(absoluteDeadline - now).count());
+
+	// cout << name << "-->" << _fullName << " UNlocking: " << _chosenContext->smCount << endl;
+	_chosenContext->unlock();
 	_chosenContext->release();
+	_chosenContext->dequeueOperation();
+
 	return input;
 }
 

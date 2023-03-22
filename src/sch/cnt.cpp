@@ -1,8 +1,8 @@
 
-# include <cnt.h>
+# include <cnt.hpp>
 
-# include <schd.h>
-# include <ctxd.h>
+# include <schd.hpp>
+# include <ctxd.hpp>
 
 # include <torch/torch.h>
 
@@ -51,10 +51,10 @@ void MyContainer::copyOperations(string parentName, MyContainer& container, int 
 	}
 }
 
-Tensor MyContainer::schedule(Tensor input, int level)
+Tensor MyContainer::schedule(string name, Tensor input, int level)
 {
 	for (auto op : operations[level - 1])
-		input = op->scheduleSync(input);
+		input = op->scheduleSync(name, input);
 
 	return input;
 }
@@ -109,7 +109,7 @@ double MyContainer::assignDeadline(double quota, int level, int contextIndex, do
 		deadlineStack += op->relativeDeadline[level];
 		op->stackedDeadline[level] = deadlineStack;
 
-		cout << op->getFullName() << ": " << op->relativeDeadline[level] << "-->" << op->stackedDeadline[level] << endl;
+		// cout << op->getFullName() << ": " << op->relativeDeadline[level] << "-->" << op->stackedDeadline[level] << endl;
 	}
 
 	return deadlineStack;

@@ -1,8 +1,8 @@
 # include <memory>
 # include <torch/torch.h>
 
-# include <cnt.h>
-# include <sqnl.h>
+# include <cnt.hpp>
+# include <sqnl.hpp>
 
 using namespace FGPRS;
 

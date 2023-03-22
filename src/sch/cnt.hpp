@@ -1,8 +1,8 @@
 # ifndef __CONTAINER__
 # define __CONTAINER__
 
-# include <ctxd.h>
-# include <opr.h>
+# include <ctxd.hpp>
+# include <opr.hpp>
 
 # include <torch/torch.h>
 
@@ -52,7 +52,7 @@ namespace FGPRS
 		void addOperations(string parentName, vector<Operation> operations, int level);
 
 		virtual Tensor forward(Tensor input) { return input; }
-		virtual Tensor schedule(Tensor input, int level);
+		virtual Tensor schedule(string name, Tensor input, int level);
 
 		void analyze(int warmup, int repeat, Tensor input);
 		virtual Tensor analyze(int warmup, int repeat, Tensor input, int level);

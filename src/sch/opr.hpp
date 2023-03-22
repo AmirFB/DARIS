@@ -1,7 +1,7 @@
 # ifndef __OPERATION__
 # define __OPERATION__
 
-# include <ctxd.h>
+# include <ctxd.hpp>
 
 # include <torch/torch.h>
 
@@ -57,8 +57,8 @@ namespace FGPRS
 		Tensor getResult();
 		Tensor runSync(Tensor input);
 
-		void startSchedule(Tensor input);
-		Tensor scheduleSync(Tensor input);
+		void startSchedule(string name, Tensor input);
+		Tensor scheduleSync(string name, Tensor input);
 
 		double getRegulatedExecutionTime(int contextIndex);
 		void setAbsoluteDeadline(int level, steady_clock::time_point start);

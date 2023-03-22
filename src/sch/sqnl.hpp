@@ -1,9 +1,9 @@
 # ifndef __SEQUENTIAL__
 # define __SEQUENTIAL__
 
-# include <ctxd.h>
-# include <opr.h>
-# include <cnt.h>
+# include <ctxd.hpp>
+# include <opr.hpp>
+# include <cnt.hpp>
 
 # include <torch/torch.h>
 
@@ -31,7 +31,7 @@ namespace FGPRS
 		void setLevel(int level);
 		void addContainer(shared_ptr<MyContainer> container);
 		void copyOperations(string parentName, MyContainer& container, int level = 1);
-		Tensor schedule(Tensor input, int level) override;
+		Tensor schedule(string name, Tensor input, int level) override;
 		Tensor analyze(int warmup, int repeat, Tensor input, int level) override;
 		double assignExecutionTime(int level, int contextIndex, double executionTimeStack);
 		double assignDeadline(double quota, int level, int contextIndex, double deadlineStack) override;
