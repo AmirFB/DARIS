@@ -19,15 +19,16 @@
 # include <cudaTypedefs.h>
 # include <cuda_runtime.h>
 
-# include <schd.h>
-# include <cnt.h>
-# include <loop.h>
+# define SCHEDULER_TYPE	PROPOSED
 
-# include <cif10.h>
-# include <cnt.h>
-# include <resnet.h>
+# include <schd.hpp>
+# include <cnt.hpp>
+# include <loop.hpp>
 
-# include <tests.h>
+# include <cif10.hpp>
+# include <resnet.hpp>
+
+# include <tests.hpp>
 
 # include <stdio.h>
 # include <stdlib.h>
@@ -41,32 +42,53 @@ using namespace torch;
 using namespace torch::nn;
 using namespace FGPRS;
 
+# define COUNT 5
+# define REPEAT 10
+
 int main(int argc, char** argv)
 {
 	NoGradGuard no_grad;
+	int level = 3;
 
-	int smOptions[] = { 4, 10, 18, 36 };
+	int smOptions[] = { 6, 12, 22, 44 };
 	Scheduler::initialize(smOptions, 4);
 
-	auto dummyData1 = torch::randn({ 1, 3, 224, 224 }, kCUDA);
-	auto dummyData2 = torch::randn({ 1, 3, 2048, 2048 }, kCUDA);
+	Tensor inputs[COUNT];
+	shared_ptr<ResNet<BasicBlock>> mods[COUNT];
+	Loop loops[COUNT];
 
-	int level = 2;
-	auto res = resnet18(1000);
-	auto loop = Loop(res, 50);
+	for (int i = 0; i < COUNT; i++)
+	{
+		inputs[i] = torch::randn({ 1, 3, 224, 224 }, kCUDA);
+		mods[i] = resnet18(1000);
+		loops[i] = Loop("res" + to_string(i + 1), mods[i], 85);
+		loops[i].initialize(level, inputs[i]);
+	}
 
-	loop.initialize(level, dummyData1);
-	this_thread::sleep_for(seconds(2));
-	loop.start(&dummyData1, level);
+	for (int i = 0; i < COUNT; i++)
+		loops[i].start(&inputs[i], level);
 
-	this_thread::sleep_for(milliseconds(200));
-	loop.stop();
-	// res->analyze(10, 50, dummyData2, 1);
-	// res->analyze(10, 50, dummyData1);
+	this_thread::sleep_for(milliseconds(10));
 
-	// cout << temp[0] << endl;
-	// temp = res->forward(dummyData1);
-	// cout << temp[0] << endl;
+	for (int i = 0; i < COUNT; i++)
+		loops[i].stop();
+
+	cout << endl << endl << endl << endl << endl;
+
+	for (int j = 0; j < REPEAT; j++)
+	{
+		this_thread::sleep_for(milliseconds(100));
+
+		for (int i = 0; i < COUNT; i++)
+			loops[i].start(&inputs[i], level);
+
+		this_thread::sleep_for(milliseconds(200));
+
+		for (int i = 0; i < COUNT; i++)
+			loops[i].stop();
+
+		cout << endl << endl << endl << endl << endl;
+	}
 
 	// char *op = argv[1];
 	// mkdir("results", 0777 );

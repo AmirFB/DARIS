@@ -1,7 +1,7 @@
-# include <loop.h>
+# include <loop.hpp>
 
-# include <cnt.h>
-# include <schd.h>
+# include <cnt.hpp>
+# include <schd.hpp>
 
 # include <memory>
 # include <chrono>
@@ -15,20 +15,15 @@ using namespace torch::nn;
 using namespace std;
 using namespace chrono;
 
-Loop::Loop(shared_ptr<MyContainer> container, double frequency)
-	: _container(container), _frequency(frequency), _period(1000000000 / frequency)
+Loop::Loop(string name, shared_ptr<MyContainer> container, double frequency, int index)
+	: _name(name), _container(container), _frequency(frequency), _period(1000000000 / frequency), _index(index)
 {
 }
-// Loop::Loop(shared_ptr<MyContainer> container, double period)
-// 	: _container(container), _period(period * 1000000), _frequency(1000 / period)
-// {
-// }
 
 void Loop::initialize(int deadlineContextIndex, Tensor dummyInput)
 {
 	_container->eval();
 	_container->to(kCUDA);
-	_container->assignOperations();
 
 	for (int i = 0; i < 10; i++)
 	{
@@ -46,24 +41,31 @@ void Loop::initialize(int deadlineContextIndex, Tensor dummyInput)
 
 	Scheduler::selectDefaultContext();
 
-	_container->analyze(5, 10, dummyInput, 3);
+# if SCHEDULER_TYPE == PROPOSED_SCHEDULER
+
+	_container->assignOperations();
+
+	_container->analyze(1, 1, dummyInput, 3);
 	cout << endl << endl;
-	_container->analyze(5, 10, dummyInput, 2);
+	_container->analyze(1, 1, dummyInput, 2);
 	cout << endl << endl;
-	_container->analyze(5, 10, dummyInput, 1);
+	_container->analyze(1, 1, dummyInput, 1);
 
 	_container->assignExecutionTime(deadlineContextIndex);
+# endif
 }
 
-void run(shared_ptr<MyContainer> container, Tensor* input, double period, bool* stop, int level)
+void run(string name, shared_ptr<MyContainer> container, Tensor* input, double period, bool* stop, int level, int index)
 {
 	int frame = 0;
 	steady_clock::time_point startTime, nextTime;
 	auto interval = nanoseconds((int)round(period));
 
+# if SCHEDULER_TYPE == PROPOSED_SCHEDULER
 	container->assignDeadline(period / 1000, 3, 3, 0);
 	container->assignDeadline(period / 1000, 2, 3, 0);
 	container->assignDeadline(period / 1000, 1, 3, 0);
+# endif
 
 	startTime = steady_clock::now();
 	nextTime = startTime;
@@ -71,28 +73,48 @@ void run(shared_ptr<MyContainer> container, Tensor* input, double period, bool* 
 	while (!*stop)
 	{
 		frame++;
+		cout << "          Next: " << ((duration_cast<microseconds>(nextTime.time_since_epoch())).count() % 1000000) << endl;
+		cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
+		cout << "Scheduling Started     " << name << " " << frame << "th" << endl;
+
+# if SCHEDULER_TYPE == PROPOSED_SCHEDULER
 		container->setAbsoluteDeadline(level, nextTime);
-		container->schedule(*input, level);
+		container->schedule(name, *input, level);
+# endif
+
+# if SCHEDULER_TYPE != PROPOSED_SCHEDULER
+		container->forward(*input);
+# endif
 
 		nextTime += interval;
 
 		if (steady_clock::now() > nextTime)
 		{
-			cout << "Deadline missed: " << container->name() << " (" << frame << ")\n";
-			cout << "Now : " << duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count() << endl;
-			cout << "Next: " << duration_cast<nanoseconds>(nextTime.time_since_epoch()).count() << endl << endl;
+			cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
+			cout << "Deadline missed: " << frame << "th " << name << endl;
+			cout << "Delayed: " << duration_cast<microseconds>(steady_clock::now() - nextTime).count() << "us" << endl;
+
+			while ((nextTime + interval) < steady_clock::now())
+			{
+				cout << "_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_\n";
+				nextTime += interval;
+			}
+
 			continue;
 		}
 
+		cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
+		cout << "Reserved: " << frame << "th " << name << " " << duration_cast<microseconds>(nextTime - steady_clock::now()).count() << "us" << endl;
+
 		this_thread::sleep_until(nextTime);
-		cout << frame << "th frame is done.\n";
 	}
 }
 
 void Loop::start(Tensor* input, int level)
 {
 	_stop = false;
-	_th = thread(run, _container, input, _period, &_stop, level);
+
+	_th = thread(run, _name, _container, input, _period, &_stop, level, _index);
 }
 
 void Loop::stop()
