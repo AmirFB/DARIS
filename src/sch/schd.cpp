@@ -1,5 +1,7 @@
 # include <schd.hpp>
 
+# include <log.hpp>
+
 # include <iostream>
 # include <thread>
 # include <future>
@@ -22,8 +24,8 @@ vector<int> Scheduler::smOptions;
 MyContext* Scheduler::_contextPool;
 MyContext Scheduler::_defaultContext;
 
-Sequential Scheduler::_dummyModule[3];
-Tensor Scheduler::_dummyInput[3];
+Sequential* Scheduler::_dummyModule;
+Tensor* Scheduler::_dummyInput;
 
 bool Scheduler::initialize(int options[], int size)
 {
@@ -35,6 +37,9 @@ bool Scheduler::initialize(int options[], int size)
 
 	_defaultContext = MyContext(maxSmCount, -1, true);
 	_contextPool = new MyContext[size];
+
+	_dummyModule = new Sequential[size - 1];
+	_dummyInput = new Tensor[size - 1];
 
 	for (int i = 0; i < (size - 1); i++)
 	{
@@ -71,9 +76,6 @@ MyContext* Scheduler::selectContext(int smCount)
 	for (int i = 0; i < smOptions.size(); i++)
 		if (!_contextPool[i].busy)
 			return &_contextPool[i];
-
-	for (int i = 0; i < smOptions.size(); i++)
-		cout << "\t" << _contextPool[i].smCount << ", " << _contextPool[i].busy << endl;
 
 	return &_defaultContext;
 }
@@ -122,7 +124,7 @@ float Scheduler::getMemoryPercentage()
 	return Scheduler::getFreeMemoryMB() / Scheduler::getTotalMemoryMB() * 100;
 }
 
-mutex mtx;
+// mutex mtx;
 
 void Scheduler::dummyFunction(MyContext* ctx, Sequential* mod, Tensor* in)
 {
@@ -138,12 +140,14 @@ void Scheduler::dummyFunction(MyContext* ctx, Sequential* mod, Tensor* in)
 	ctx->release();
 }
 
-future<void> Scheduler::_th[3];
+future<void>* Scheduler::_th;
 
 void Scheduler::startDummy(MyContext* ctx)
 {
 	int index = 0;
 	_stopDummy = false;
+
+	_th = new future<void>[smOptions.size()];
 
 	for (int i = 0; i < smOptions.size(); i++)
 	{
@@ -166,13 +170,13 @@ void Scheduler::stopDummy()
 {
 	_stopDummy = true;
 
-	for (int i = 0; i < 3; i++)
+	for (int i = 0; i < (smOptions.size() - 1); i++)
 		_th[i].get();
 }
 
 mutex globalMutex;
 
-MyContext* Scheduler::getBestContext(Operation* operation)
+MyContext* Scheduler::getMinimalContext(Operation* operation)
 {
 	MyContext* ctx1 = NULL, * ctx2;
 	globalMutex.lock();
@@ -221,7 +225,7 @@ MyContext* Scheduler::getBestContext(Operation* operation)
 		}
 	}
 
-	cout << "Zorake!\n";
+	// couts << "Zorake!\n";
 
 	if (ctx1 != NULL)
 	{
@@ -241,4 +245,30 @@ MyContext* Scheduler::getBestContext(Operation* operation)
 		globalMutex.unlock();
 		return ctx2;
 	}
+}
+
+MyContext* Scheduler::getFastestContext(Operation* operation)
+{
+	MyContext* ctx;
+	globalMutex.lock();
+
+	steady_clock::time_point earliest = steady_clock::now() + seconds(1);
+	steady_clock::time_point temp;
+
+	for (int i = 0; i < smOptions.size(); i++)
+	{
+		temp = _contextPool[i].getFinishTime() + microseconds((int)operation->contextData[i].occupiedExecutionTime);
+
+		if (temp < earliest)
+		{
+			earliest = temp;
+			ctx = &_contextPool[i];
+		}
+	}
+
+	ctx->queueOperation(operation);
+	ctx->lock();
+
+	globalMutex.unlock();
+	return ctx;
 }

@@ -26,9 +26,9 @@ namespace FGPRS
 	private:
 		static MyContext* _contextPool;
 		static MyContext _defaultContext;
-		static Sequential _dummyModule[3];
-		static Tensor _dummyInput[3];
-		static future<void> _th[3];
+		static Sequential* _dummyModule;
+		static Tensor* _dummyInput;
+		static future<void>* _th;
 
 	public:
 		static bool initialize(int[], int);
@@ -49,7 +49,8 @@ namespace FGPRS
 		static void startDummy(MyContext* ctx);
 		static void stopDummy();
 
-		static MyContext* getBestContext(Operation* operation);
+		static MyContext* getMinimalContext(Operation* operation);
+		static MyContext* getFastestContext(Operation* operation);
 	};
 }
 
