@@ -2,8 +2,8 @@
 # define __SEQUENTIAL__
 
 # include <ctxd.hpp>
-# include <opr.hpp>
 # include <cnt.hpp>
+# include <opr.hpp>
 
 # include <torch/torch.h>
 

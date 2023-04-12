@@ -8,6 +8,8 @@ export CUDA_HOME=/usr/local/cuda
 export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$LD_LIBRARY_PATH"
 # export PYTORCH_NO_CUDA_MEMORY_CACHING=1
 
-./build/fgprs
+sudo nvidia-smi -pl 280
+
+./build/fgprs proposed
 	
 echo quit | nvidia-cuda-mps-control

@@ -19,8 +19,10 @@ namespace FGPRS
 	public:
 		MyContext* context;
 		double isolatedExecutionTime, occupiedExecutionTime;
+		double isolatedExecutionTimeExp, occupiedExecutionTimeExp;
 		int smCount;
 
+		ContextData();
 		ContextData(MyContext* context);
 		ContextData(MyContext* context, double isolatedExecutionTime, double occupiedExecutionTime);
 		virtual void stackExecutionTime(ContextData ctxData);

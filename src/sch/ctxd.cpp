@@ -4,6 +4,8 @@
 
 using namespace FGPRS;
 
+ContextData::ContextData() {}
+
 ContextData::ContextData(MyContext* context)
 {
 	this->context = context;
@@ -18,10 +20,14 @@ ContextData::ContextData(MyContext* context, double isolatedExecutionTime, doubl
 	smCount = context->smCount;
 	this->isolatedExecutionTime = isolatedExecutionTime;
 	this->occupiedExecutionTime = occupiedExecutionTime;
+	this->isolatedExecutionTimeExp = exp(isolatedExecutionTime);
+	this->occupiedExecutionTimeExp = exp(occupiedExecutionTime);
 }
 
 void ContextData::stackExecutionTime(ContextData ctxData)
 {
 	this->isolatedExecutionTime += ctxData.isolatedExecutionTime;
 	this->occupiedExecutionTime += ctxData.occupiedExecutionTime;
+	this->isolatedExecutionTimeExp += exp(ctxData.isolatedExecutionTime);
+	this->occupiedExecutionTimeExp += exp(ctxData.occupiedExecutionTime);
 }
