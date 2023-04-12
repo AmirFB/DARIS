@@ -5,13 +5,10 @@
 
 # include <memory>
 
-# define PROPOSED_SCHEDULER	0
-# define NOMPS_SCHEDULER		1
-# define MP_SCHEDULERS			2
-# define PMPS_SCHEDULER			3
-
 namespace FGPRS
 {
+	enum SchedulerType { PROPOSED_SCHEDULER, NOMPS_SCHEDULER, MPS_SCHEDULER, PMPS_SCHEDULER, PMPSO_SCHEDULER };
+
 	class Loop
 	{
 	private:
@@ -26,8 +23,8 @@ namespace FGPRS
 		Loop() {}
 		Loop(string name, shared_ptr<MyContainer> container, double _frequency, int index = -1);
 
-		void initialize(int deadlineContextIndex, Tensor dummyInput);
-		void start(Tensor* input, int level = 0);
+		void initialize(int deadlineContextIndex, Tensor dummyInput, int level);
+		void start(Tensor* input, SchedulerType type, int level = 0);
 		void stop();
 	};
 }
