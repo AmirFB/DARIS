@@ -2,7 +2,6 @@
 
 # include <ctxd.hpp>
 # include <schd.hpp>
-# include <log.hpp>
 
 # include <torch/torch.h>
 
@@ -177,11 +176,11 @@ void Operation::startSchedule(string name, Tensor input)
 		_chosenContext->lock();
 		_chosenContext->queueOperation(this);
 
-		printfs("%s-->%s: started.\n", name.c_str(), _fullName.c_str());
+		printf("%s-->%s: started.\n", name.c_str(), _fullName.c_str());
 
 		runSync(input);
 
-		// printfs("%s-->%s: %3i SMs\t %i -> %li + %li = %li \n",
+		// printf("%s-->%s: %3i SMs\t %i -> %li + %li = %li \n",
 		// 	name.c_str(), _fullName.c_str(), _chosenContext->smCount,
 		// 	(int)contextData[_chosenContext->index].occupiedExecutionTime,
 		// 	duration_cast<microseconds>(steady_clock::now() - now).count(),
@@ -203,7 +202,7 @@ void Operation::startSchedule(string name, Tensor input)
 Tensor Operation::scheduleSync(string name, Tensor input)
 {
 	// cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
-	// printfs("Starting     %s-->%s\n", name.c_str(), _fullName.c_str());
+	// printf("Starting     %s-->%s\n", name.c_str(), _fullName.c_str());
 	// cout << "          STime of: " << name << "-->" << _fullName << " -> " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
 
 	if (occupiedScalability < exceptionThreshold)
@@ -226,7 +225,7 @@ Tensor Operation::scheduleSync(string name, Tensor input)
 
 	auto now = startTime;
 	// cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
-	// printfs("Executing     %s-->%s: %i: %li\n", name.c_str(), _fullName.c_str(), _chosenContext->smCount, _chosenContext->queue.size());
+	// printf("Executing     %s-->%s: %i: %li\n", name.c_str(), _fullName.c_str(), _chosenContext->smCount, _chosenContext->queue.size());
 
 	// cout << "          CTime of: " << name << "-->" << _fullName << " -> " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
 
@@ -268,7 +267,7 @@ Tensor Operation::scheduleSync(string name, Tensor input)
 
 double Operation::getRegulatedExecutionTime(int contextIndex)
 {
-	// printfs("Sca: %lf, Exe: %lf, Reg: %lf, Exp: %lf\n", occupiedScalability, contextData[contextIndex].occupiedExecutionTime, contextData[contextIndex].occupiedExecutionTime * (1 - occupiedScalability), exp(contextData[contextIndex].occupiedExecutionTime * (1 - occupiedScalability) - 10000));
+	// printf("Sca: %lf, Exe: %lf, Reg: %lf, Exp: %lf\n", occupiedScalability, contextData[contextIndex].occupiedExecutionTime, contextData[contextIndex].occupiedExecutionTime * (1 - occupiedScalability), exp(contextData[contextIndex].occupiedExecutionTime * (1 - occupiedScalability) - 10000));
 	return contextData[contextIndex].occupiedExecutionTime;// *max(1 - occupiedScalability, 0.25);
 }
 

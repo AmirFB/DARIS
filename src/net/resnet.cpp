@@ -211,35 +211,35 @@ struct BasicBlock: public MyContainer
 		deadlineStack += o_conv1->relativeDeadline[level];
 		o_conv1->stackedDeadline[level] = deadlineStack;
 
-		// couts << o_conv1->getFullName() << ": " << o_conv1->relativeDeadline[level] << "-->" << o_conv1->stackedDeadline[level] << endl;
+		// cout << o_conv1->getFullName() << ": " << o_conv1->relativeDeadline[level] << "-->" << o_conv1->stackedDeadline[level] << endl;
 
 		o_bn1->relativeDeadline[level] = o_bn1->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_bn1->relativeDeadline[level];
 		deadlineStack += o_bn1->relativeDeadline[level];
 		o_bn1->stackedDeadline[level] = deadlineStack;
 
-		// couts << o_bn1->getFullName() << ": " << o_bn1->relativeDeadline[level] << "-->" << o_bn1->stackedDeadline[level] << endl;
+		// cout << o_bn1->getFullName() << ": " << o_bn1->relativeDeadline[level] << "-->" << o_bn1->stackedDeadline[level] << endl;
 
 		o_relu1->relativeDeadline[level] = o_relu1->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_relu1->relativeDeadline[level];
 		deadlineStack += o_relu1->relativeDeadline[level];
 		o_relu1->stackedDeadline[level] = deadlineStack;
 
-		// couts << o_relu1->getFullName() << ": " << o_relu1->relativeDeadline[level] << "-->" << o_relu1->stackedDeadline[level] << endl;
+		// cout << o_relu1->getFullName() << ": " << o_relu1->relativeDeadline[level] << "-->" << o_relu1->stackedDeadline[level] << endl;
 
 		o_conv2->relativeDeadline[level] = o_conv2->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_conv2->relativeDeadline[level];
 		deadlineStack += o_conv2->relativeDeadline[level];
 		o_conv2->stackedDeadline[level] = deadlineStack;
 
-		// couts << o_conv2->getFullName() << ": " << o_conv2->relativeDeadline[level] << "-->" << o_conv2->stackedDeadline[level] << endl;
+		// cout << o_conv2->getFullName() << ": " << o_conv2->relativeDeadline[level] << "-->" << o_conv2->stackedDeadline[level] << endl;
 
 		if (!m_downsample->is_empty())
 		{
 			o_downsample->relativeDeadline[level] = quota;
 			o_downsample->stackedDeadline[level] = deadlineStack;
 
-			// couts << o_downsample->getFullName() << ": " << o_downsample->relativeDeadline[level] << "-->" << o_downsample->stackedDeadline[level] << endl;
+			// cout << o_downsample->getFullName() << ": " << o_downsample->relativeDeadline[level] << "-->" << o_downsample->stackedDeadline[level] << endl;
 		}
 
 		o_relu2->relativeDeadline[level] = o_relu2->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
@@ -247,7 +247,7 @@ struct BasicBlock: public MyContainer
 		deadlineStack += o_relu2->relativeDeadline[level];
 		o_relu2->stackedDeadline[level] = deadlineStack;
 
-		// couts << o_relu2->getFullName() << ": " << o_relu2->relativeDeadline[level] << "-->" << o_relu2->stackedDeadline[level] << endl;
+		// cout << o_relu2->getFullName() << ": " << o_relu2->relativeDeadline[level] << "-->" << o_relu2->stackedDeadline[level] << endl;
 
 		return deadlineStack;
 	}
@@ -747,28 +747,28 @@ struct ResNet: public MyContainer
 		deadlineStack += o_conv1->relativeDeadline[level];
 		o_conv1->stackedDeadline[level] = deadlineStack;
 
-		// couts << o_conv1->getFullName() << ": " << o_conv1->relativeDeadline[level] << "-->" << o_conv1->stackedDeadline[level] << endl;
+		// cout << o_conv1->getFullName() << ": " << o_conv1->relativeDeadline[level] << "-->" << o_conv1->stackedDeadline[level] << endl;
 
 		o_bn1->relativeDeadline[level] = o_bn1->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_bn1->relativeDeadline[level];
 		deadlineStack += o_bn1->relativeDeadline[level];
 		o_bn1->stackedDeadline[level] = deadlineStack;
 
-		// couts << o_bn1->getFullName() << ": " << o_bn1->relativeDeadline[level] << "-->" << o_bn1->stackedDeadline[level] << endl;
+		// cout << o_bn1->getFullName() << ": " << o_bn1->relativeDeadline[level] << "-->" << o_bn1->stackedDeadline[level] << endl;
 
 		o_relu->relativeDeadline[level] = o_relu->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_relu->relativeDeadline[level];
 		deadlineStack += o_relu->relativeDeadline[level];
 		o_relu->stackedDeadline[level] = deadlineStack;
 
-		// couts << o_relu->getFullName() << ": " << o_relu->relativeDeadline[level] << "-->" << o_relu->stackedDeadline[level] << endl;
+		// cout << o_relu->getFullName() << ": " << o_relu->relativeDeadline[level] << "-->" << o_relu->stackedDeadline[level] << endl;
 
 		o_maxpool->relativeDeadline[level] = o_maxpool->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_maxpool->relativeDeadline[level];
 		deadlineStack += o_maxpool->relativeDeadline[level];
 		o_maxpool->stackedDeadline[level] = deadlineStack;
 
-		// couts << o_maxpool->getFullName() << ": " << o_maxpool->relativeDeadline[level] << "-->" << o_maxpool->stackedDeadline[level] << endl;
+		// cout << o_maxpool->getFullName() << ": " << o_maxpool->relativeDeadline[level] << "-->" << o_maxpool->stackedDeadline[level] << endl;
 
 		tempStack = m_layer1.assignDeadline((m_layer1.regulatedExecutionTime[level] / regulatedExecutionTime[level]) * quota, level + 1, contextIndex, deadlineStack);
 		tempDeadline = tempStack - deadlineStack;
@@ -795,14 +795,14 @@ struct ResNet: public MyContainer
 		deadlineStack += o_avgpool->relativeDeadline[level];
 		o_avgpool->stackedDeadline[level] = deadlineStack;
 
-		// couts << o_avgpool->getFullName() << ": " << o_avgpool->relativeDeadline[level] << "-->" << o_avgpool->stackedDeadline[level] << endl;
+		// cout << o_avgpool->getFullName() << ": " << o_avgpool->relativeDeadline[level] << "-->" << o_avgpool->stackedDeadline[level] << endl;
 
 		o_fc->relativeDeadline[level] = o_fc->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_fc->relativeDeadline[level];
 		deadlineStack += o_fc->relativeDeadline[level];
 		o_fc->stackedDeadline[level] = deadlineStack;
 
-		// couts << o_fc->getFullName() << ": " << o_fc->relativeDeadline[level] << "-->" << o_fc->stackedDeadline[level] << endl;
+		// cout << o_fc->getFullName() << ": " << o_fc->relativeDeadline[level] << "-->" << o_fc->stackedDeadline[level] << endl;
 
 		return deadlineStack;
 	}

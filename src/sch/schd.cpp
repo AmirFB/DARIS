@@ -1,7 +1,5 @@
 # include <schd.hpp>
 
-# include <log.hpp>
-
 # include <iostream>
 # include <thread>
 # include <future>
@@ -225,7 +223,7 @@ MyContext* Scheduler::getMinimalContext(Operation* operation)
 		}
 	}
 
-	// couts << "Zorake!\n";
+	// cout << "Zorake!\n";
 
 	if (ctx1 != NULL)
 	{

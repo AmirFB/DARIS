@@ -35,7 +35,6 @@
 # include <unistd.h>
 # include <sys/time.h>
 # include <sched.h>
-# include <log.hpp>
 
 # include <c10/cuda/CUDACachingAllocator.h>
 

@@ -3,7 +3,6 @@
 
 # include <schd.hpp>
 # include <ctxd.hpp>
-# include <log.hpp>
 
 # include <torch/torch.h>
 
