@@ -1,8 +1,8 @@
 # ifndef __CONTAINER__
 # define __CONTAINER__
 
-# include <ctxd.hpp>
 # include <opr.hpp>
+# include <ctxd.hpp>
 
 # include <torch/torch.h>
 
@@ -11,14 +11,20 @@
 # include <stdio.h>
 # include <memory>
 
+# include <spdlog/spdlog.h>
+# include <spdlog/sinks/basic_file_sink.h>
+
 using namespace torch;
 using namespace torch::nn;
 
 using namespace std;
 using namespace std::chrono;
+using namespace spdlog;
 
 namespace FGPRS
 {
+	class Operation;
+
 	class MyContainer: public Module
 	{
 	private:
@@ -33,6 +39,8 @@ namespace FGPRS
 
 		vector<shared_ptr<MyContainer>> containers;
 		int _maxLevel = 0;
+
+		shared_ptr<spdlog::logger> analyzeLogger, deadlineLogger, schedulerLogger;
 
 		vector<vector<ContextData>> contextData
 			= { vector<ContextData>(), vector<ContextData>(), vector<ContextData>() };
@@ -57,7 +65,6 @@ namespace FGPRS
 		void analyze(int warmup, int repeat, Tensor input);
 		virtual Tensor analyze(int warmup, int repeat, Tensor input, int level);
 
-		void assignExecutionTime(int contextIndex);
 		virtual double assignExecutionTime(int level, int contextIndex, double executionTimetack);
 
 		void assignDeadline(double quota, int contextIndex);
@@ -65,9 +72,9 @@ namespace FGPRS
 		void setAbsoluteDeadline(int level, steady_clock::time_point start);
 
 		template <typename ModuleType>
-		shared_ptr<Operation> addOperation(string name, shared_ptr<ModuleType> module, int level = 0)
+		shared_ptr<Operation> addOperation(MyContainer* owner, string name, shared_ptr<ModuleType> module, int level = 0)
 		{
-			auto operation = make_shared<Operation>(name, module);
+			auto operation = make_shared<Operation>(owner, name, module);
 
 			if (level == 0 || level == 1)
 				operations[0].push_back(operation);

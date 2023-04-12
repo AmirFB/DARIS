@@ -2,6 +2,7 @@
 
 # include <ctxd.hpp>
 # include <schd.hpp>
+# include <log.hpp>
 
 # include <torch/torch.h>
 
@@ -9,6 +10,7 @@
 # include <iostream>
 # include <unistd.h>
 # include <future>
+# include <cmath>
 
 using namespace std;
 using namespace std::chrono;
@@ -45,7 +47,7 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 	isolatedScalability = 0;
 	occupiedScalability = 0;
 
-	// cout << _fullName << ":" << endl;
+	cout << _fullName << ":" << endl;
 
 	Scheduler::selectDefaultContext();
 	contextData.clear();
@@ -92,8 +94,16 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 		ctx->release();
 
 		contextData.push_back(ContextData(ctx, d1.count() / repeat * 1000000, d2.count() / repeat * 1000000));
-		// cout << "\t" << ctx->smCount << "\t" << contextData.back().isolatedExecutionTime << "us"
-		// 	<< ", " << contextData.back().occupiedExecutionTime << "us";
+		cout << "\t" << ctx->smCount << "\t" << contextData.back().isolatedExecutionTime << "us"
+			<< ", " << contextData.back().occupiedExecutionTime << "us";
+
+		if (!first)
+		{
+			contextData.back().isolatedExecutionTime =
+				min(contextData.back().isolatedExecutionTime, contextData[contextData.size() - 2].isolatedExecutionTime);
+			contextData.back().occupiedExecutionTime =
+				min(contextData.back().occupiedExecutionTime, contextData[contextData.size() - 2].occupiedExecutionTime);
+		}
 
 		predictability += 1 - (contextData.back().occupiedExecutionTime - contextData.back().isolatedExecutionTime) / contextData.back().occupiedExecutionTime;
 
@@ -117,9 +127,9 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 	isolatedScalability /= 3;
 	occupiedScalability /= 3;
 
-	// cout << endl
-	// 	<< "Params: " << predictability << "\t" << isolatedScalability << "\t" << occupiedScalability << endl
-	// 	<< endl;
+	cout << endl
+		<< "Params: " << predictability << "\t" << isolatedScalability << "\t" << occupiedScalability << endl
+		<< endl;
 
 	return output;
 }
@@ -134,7 +144,8 @@ void thrdFunction(Operation* operation, Tensor* input, MyContext* context)
 void Operation::start(Tensor input)
 {
 	_output = &input;
-	_chosenContext = Scheduler::getBestContext(this);
+	// _chosenContext = Scheduler::getMinimalContext(this);
+	_chosenContext = Scheduler::getFastestContext(this);
 	_th = thread(thrdFunction, this, &input, _chosenContext);
 }
 
@@ -166,16 +177,16 @@ void Operation::startSchedule(string name, Tensor input)
 		_chosenContext->lock();
 		_chosenContext->queueOperation(this);
 
-		printf("%s-->%s: started.\n", name.c_str(), _fullName.c_str());
+		printfs("%s-->%s: started.\n", name.c_str(), _fullName.c_str());
 
 		runSync(input);
 
-		printf("%s-->%s: %3i SMs\t %i -> %li + %li = %li \n",
-			name.c_str(), _fullName.c_str(), _chosenContext->smCount,
-			(int)contextData[_chosenContext->index].occupiedExecutionTime,
-			duration_cast<microseconds>(steady_clock::now() - now).count(),
-			duration_cast<microseconds>(absoluteDeadline - steady_clock::now()).count(),
-			duration_cast<microseconds>(absoluteDeadline - now).count());
+		// printfs("%s-->%s: %3i SMs\t %i -> %li + %li = %li \n",
+		// 	name.c_str(), _fullName.c_str(), _chosenContext->smCount,
+		// 	(int)contextData[_chosenContext->index].occupiedExecutionTime,
+		// 	duration_cast<microseconds>(steady_clock::now() - now).count(),
+		// 	duration_cast<microseconds>(absoluteDeadline - steady_clock::now()).count(),
+		// 	duration_cast<microseconds>(absoluteDeadline - now).count());
 
 		_chosenContext->unlock();
 		_chosenContext->release();
@@ -191,8 +202,9 @@ void Operation::startSchedule(string name, Tensor input)
 
 Tensor Operation::scheduleSync(string name, Tensor input)
 {
-	cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
-	printf("Starting     %s-->%s\n", name.c_str(), _fullName.c_str());
+	// cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
+	// printfs("Starting     %s-->%s\n", name.c_str(), _fullName.c_str());
+	// cout << "          STime of: " << name << "-->" << _fullName << " -> " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
 
 	if (occupiedScalability < exceptionThreshold)
 	{
@@ -205,25 +217,46 @@ Tensor Operation::scheduleSync(string name, Tensor input)
 	else
 	{
 		_isException = false;
-		_chosenContext = Scheduler::getBestContext(this);
+		_chosenContext = Scheduler::getMinimalContext(this);
+		// _chosenContext = Scheduler::getFastestContext(this);
 	}
 
 	startTime = steady_clock::now();
 	_chosenContext->select();
 
 	auto now = startTime;
-	cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
-	printf("Executing     %s-->%s: %i: %li\n", name.c_str(), _fullName.c_str(), _chosenContext->smCount, _chosenContext->queue.size());
+	// cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
+	// printfs("Executing     %s-->%s: %i: %li\n", name.c_str(), _fullName.c_str(), _chosenContext->smCount, _chosenContext->queue.size());
+
+	// cout << "          CTime of: " << name << "-->" << _fullName << " -> " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
 
 	input = runSync(input);
 
-	cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
-	printf("FINISHED     %s-->%s: %3i SMs\t %i -> %li + %li = %li \n",
+	// cout << "          ETime of: " << name << "-->" << _fullName << " -> " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
+
+	// auto now2 = std::chrono::system_clock::now();
+	// auto us = std::chrono::duration_cast<std::chrono::microseconds>(now2.time_since_epoch()).count();
+	// std::time_t now_c = std::chrono::system_clock::to_time_t(now2);
+	// char buffer[80];
+	// std::strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", std::localtime(&now_c));
+	// std::cout << buffer << "." << std::setfill('0') << std::setw(6) << (us % 1000000) << std::endl;
+
+	// struct timespec ts;
+	// clock_gettime(CLOCK_REALTIME, &ts);
+	// time_t nowtime = ts.tv_sec;
+	// struct tm* nowtm = localtime(&nowtime);
+	// char tmbuf[64];
+	// strftime(tmbuf, sizeof(tmbuf), "%Y-%m-%d %H:%M:%S", nowtm);
+	// std::cout << "Current time: " << tmbuf << "." << ts.tv_nsec / 1000 << " microseconds" << std::endl;
+
+	_parent->schedulerLogger->info(
+		"FINISHED     {}-->{}: {} SMs\t {} -> {} + {} = {} ({})",
 		name.c_str(), _fullName.c_str(), _chosenContext->smCount,
 		(int)contextData[_chosenContext->index].occupiedExecutionTime,
 		duration_cast<microseconds>(steady_clock::now() - now).count(),
 		duration_cast<microseconds>(absoluteDeadline - steady_clock::now()).count(),
-		duration_cast<microseconds>(absoluteDeadline - now).count());
+		duration_cast<microseconds>(absoluteDeadline - now).count(),
+		(long)relativeDeadline[2]);
 
 	// cout << name << "-->" << _fullName << " UNlocking: " << _chosenContext->smCount << endl;
 	_chosenContext->unlock();
@@ -235,11 +268,13 @@ Tensor Operation::scheduleSync(string name, Tensor input)
 
 double Operation::getRegulatedExecutionTime(int contextIndex)
 {
-	return contextData[contextIndex].occupiedExecutionTime * (1 - occupiedScalability);
+	// printfs("Sca: %lf, Exe: %lf, Reg: %lf, Exp: %lf\n", occupiedScalability, contextData[contextIndex].occupiedExecutionTime, contextData[contextIndex].occupiedExecutionTime * (1 - occupiedScalability), exp(contextData[contextIndex].occupiedExecutionTime * (1 - occupiedScalability) - 10000));
+	return contextData[contextIndex].occupiedExecutionTime;// *max(1 - occupiedScalability, 0.25);
 }
 
 void Operation::setAbsoluteDeadline(int level, steady_clock::time_point start)
 {
 	absoluteDeadline = start + microseconds((int)stackedDeadline[level - 1]);
-	// cout << getFullName() << "->" << duration_cast<milliseconds>(absoluteDeadline.time_since_epoch()).count() << endl;
+	// cout << level << endl;
+	// cout << getFullName() << "->" << stackedDeadline[level - 1] << endl;
 }

@@ -3,6 +3,7 @@
 
 # include <schd.hpp>
 # include <ctxd.hpp>
+# include <log.hpp>
 
 # include <torch/torch.h>
 
@@ -73,20 +74,16 @@ Tensor MyContainer::analyze(int warmup, int repeat, Tensor input, int level)
 	return input;
 }
 
-void MyContainer::assignExecutionTime(int contextIndex)
-{
-	for (int i = 1; i <= 3; i++)
-		cout << "\nLevel" << i << ": " << assignExecutionTime(i, contextIndex, 0) << "\n\n";
-}
-
 double MyContainer::assignExecutionTime(int level, int contextIndex, double executionTimeStack)
 {
 	double timeStack = 0;
 	level -= 1;
 
+	contextData[level].resize(Scheduler::smOptions.size());
+
 	for (int i = 0; i < Scheduler::smOptions.size(); i++)
 	{
-		contextData[level].push_back(ContextData(Scheduler::selectContextByIndex(i)));
+		contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 
 		for (auto op : operations[level])
 			contextData[level][i].stackExecutionTime(op->contextData[i]);

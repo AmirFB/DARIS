@@ -140,17 +140,17 @@ struct BasicBlock: public MyContainer
 
 	void assignOperations()
 	{
-		o_conv1 = addOperation("conv1", m_conv1.ptr());
-		o_bn1 = addOperation("bn1", m_bn1.ptr());
-		o_relu1 = addOperation("relu", m_relu.ptr());
+		o_conv1 = addOperation(this, "conv1", m_conv1.ptr());
+		o_bn1 = addOperation(this, "bn1", m_bn1.ptr());
+		o_relu1 = addOperation(this, "relu", m_relu.ptr());
 
-		o_conv2 = addOperation("conv2", m_conv2.ptr());
-		o_bn2 = addOperation("bn2", m_bn2.ptr());
+		o_conv2 = addOperation(this, "conv2", m_conv2.ptr());
+		o_bn2 = addOperation(this, "bn2", m_bn2.ptr());
 
 		if (!m_downsample->is_empty())
-			o_downsample = addOperation("downsample", m_downsample.ptr());
+			o_downsample = addOperation(this, "downsample", m_downsample.ptr());
 
-		o_relu2 = addOperation("relu", m_relu.ptr());
+		o_relu2 = addOperation(this, "relu", m_relu.ptr());
 	}
 
 	Tensor analyze(int warmup, int repeat, Tensor input, int level)
@@ -175,10 +175,13 @@ struct BasicBlock: public MyContainer
 	{
 		double tempStack = 0;
 		level -= 1;
+		cout << "Or here?\n";
+
+		contextData[level].resize(Scheduler::smOptions.size());
 
 		for (int i = 0; i < Scheduler::smOptions.size(); i++)
 		{
-			contextData[level].push_back(ContextData(Scheduler::selectContextByIndex(i)));
+			contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 
 			contextData[level][i].stackExecutionTime(o_conv1->contextData[i]);
 			contextData[level][i].stackExecutionTime(o_bn1->contextData[i]);
@@ -208,35 +211,35 @@ struct BasicBlock: public MyContainer
 		deadlineStack += o_conv1->relativeDeadline[level];
 		o_conv1->stackedDeadline[level] = deadlineStack;
 
-		// cout << o_conv1->getFullName() << ": " << o_conv1->relativeDeadline[level] << "-->" << o_conv1->stackedDeadline[level] << endl;
+		// couts << o_conv1->getFullName() << ": " << o_conv1->relativeDeadline[level] << "-->" << o_conv1->stackedDeadline[level] << endl;
 
 		o_bn1->relativeDeadline[level] = o_bn1->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_bn1->relativeDeadline[level];
 		deadlineStack += o_bn1->relativeDeadline[level];
 		o_bn1->stackedDeadline[level] = deadlineStack;
 
-		// cout << o_bn1->getFullName() << ": " << o_bn1->relativeDeadline[level] << "-->" << o_bn1->stackedDeadline[level] << endl;
+		// couts << o_bn1->getFullName() << ": " << o_bn1->relativeDeadline[level] << "-->" << o_bn1->stackedDeadline[level] << endl;
 
 		o_relu1->relativeDeadline[level] = o_relu1->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_relu1->relativeDeadline[level];
 		deadlineStack += o_relu1->relativeDeadline[level];
 		o_relu1->stackedDeadline[level] = deadlineStack;
 
-		// cout << o_relu1->getFullName() << ": " << o_relu1->relativeDeadline[level] << "-->" << o_relu1->stackedDeadline[level] << endl;
+		// couts << o_relu1->getFullName() << ": " << o_relu1->relativeDeadline[level] << "-->" << o_relu1->stackedDeadline[level] << endl;
 
 		o_conv2->relativeDeadline[level] = o_conv2->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_conv2->relativeDeadline[level];
 		deadlineStack += o_conv2->relativeDeadline[level];
 		o_conv2->stackedDeadline[level] = deadlineStack;
 
-		// cout << o_conv2->getFullName() << ": " << o_conv2->relativeDeadline[level] << "-->" << o_conv2->stackedDeadline[level] << endl;
+		// couts << o_conv2->getFullName() << ": " << o_conv2->relativeDeadline[level] << "-->" << o_conv2->stackedDeadline[level] << endl;
 
 		if (!m_downsample->is_empty())
 		{
 			o_downsample->relativeDeadline[level] = quota;
 			o_downsample->stackedDeadline[level] = deadlineStack;
 
-			// cout << o_downsample->getFullName() << ": " << o_downsample->relativeDeadline[level] << "-->" << o_downsample->stackedDeadline[level] << endl;
+			// couts << o_downsample->getFullName() << ": " << o_downsample->relativeDeadline[level] << "-->" << o_downsample->stackedDeadline[level] << endl;
 		}
 
 		o_relu2->relativeDeadline[level] = o_relu2->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
@@ -244,7 +247,7 @@ struct BasicBlock: public MyContainer
 		deadlineStack += o_relu2->relativeDeadline[level];
 		o_relu2->stackedDeadline[level] = deadlineStack;
 
-		// cout << o_relu2->getFullName() << ": " << o_relu2->relativeDeadline[level] << "-->" << o_relu2->stackedDeadline[level] << endl;
+		// couts << o_relu2->getFullName() << ": " << o_relu2->relativeDeadline[level] << "-->" << o_relu2->stackedDeadline[level] << endl;
 
 		return deadlineStack;
 	}
@@ -319,24 +322,24 @@ struct Bottleneck: public MyContainer
 
 	void assignOperations()
 	{
-		o_conv1 = addOperation("conv1", m_conv1.ptr());
-		o_bn1 = addOperation("bn1", m_bn1.ptr());
-		o_relu1 = addOperation("relu", m_relu.ptr());
+		o_conv1 = addOperation(this, "conv1", m_conv1.ptr());
+		o_bn1 = addOperation(this, "bn1", m_bn1.ptr());
+		o_relu1 = addOperation(this, "relu", m_relu.ptr());
 
-		o_conv2 = addOperation("conv2", m_conv2.ptr());
-		o_bn2 = addOperation("bn2", m_bn2.ptr());
-		o_relu2 = addOperation("relu", m_relu.ptr());
+		o_conv2 = addOperation(this, "conv2", m_conv2.ptr());
+		o_bn2 = addOperation(this, "bn2", m_bn2.ptr());
+		o_relu2 = addOperation(this, "relu", m_relu.ptr());
 
-		o_conv3 = addOperation("conv3", m_conv3.ptr());
-		o_bn3 = addOperation("bn3", m_bn3.ptr());
+		o_conv3 = addOperation(this, "conv3", m_conv3.ptr());
+		o_bn3 = addOperation(this, "bn3", m_bn3.ptr());
 
-		o_conv2 = addOperation("conv2", m_conv2.ptr());
-		o_bn2 = addOperation("bn2", m_bn2.ptr());
+		o_conv2 = addOperation(this, "conv2", m_conv2.ptr());
+		o_bn2 = addOperation(this, "bn2", m_bn2.ptr());
 
 		if (!m_downsample->is_empty())
-			o_downsample = addOperation("downsample", m_downsample.ptr());
+			o_downsample = addOperation(this, "downsample", m_downsample.ptr());
 
-		o_relu3 = addOperation("relu", m_relu.ptr());
+		o_relu3 = addOperation(this, "relu", m_relu.ptr());
 	}
 
 	Tensor analyze(int warmup, int repeat, Tensor input, int level)
@@ -367,10 +370,11 @@ struct Bottleneck: public MyContainer
 	{
 		double tempStack = 0;
 		level -= 1;
+		contextData[level].resize(Scheduler::smOptions.size());
 
 		for (int i = 0; i < Scheduler::smOptions.size(); i++)
 		{
-			contextData[level].push_back(ContextData(Scheduler::selectContextByIndex(i)));
+			contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 
 			contextData[level][i].stackExecutionTime(o_conv1->contextData[i]);
 			contextData[level][i].stackExecutionTime(o_bn1->contextData[i]);
@@ -555,7 +559,7 @@ struct ResNet: public MyContainer
 
 		block.assignOperations();
 		layers.copyOperations("block1", block, 2);
-		layers.addOperation("block1", make_shared<Block>(block), 2);
+		layers.addOperation(this, "block1", make_shared<Block>(block), 2);
 		layers.addContainer(make_shared<Block>(block));
 
 		m_inplanes = planes * Block::m_expansion;
@@ -569,7 +573,7 @@ struct ResNet: public MyContainer
 			layers->push_back(block);
 			block.assignOperations();
 			layers.copyOperations("block" + to_string(i + 2), block, 2);
-			layers.addOperation("block" + to_string(i + 2), make_shared<Block>(block), 2);
+			layers.addOperation(this, "block" + to_string(i + 2), make_shared<Block>(block), 2);
 			layers.addContainer(make_shared<Block>(block));
 		}
 
@@ -630,25 +634,25 @@ struct ResNet: public MyContainer
 
 	void assignOperations()
 	{
-		o_conv1 = addOperation("conv1", m_conv1.ptr());
-		o_bn1 = addOperation("bn1", m_bn1.ptr());
-		o_relu = addOperation("relu", m_relu.ptr());
-		o_maxpool = addOperation("maxpool", m_maxpool.ptr());
+		o_conv1 = addOperation(this, "conv1", m_conv1.ptr());
+		o_bn1 = addOperation(this, "bn1", m_bn1.ptr());
+		o_relu = addOperation(this, "relu", m_relu.ptr());
+		o_maxpool = addOperation(this, "maxpool", m_maxpool.ptr());
 
 		copyOperations("layer1", m_layer1, 3);
-		o_layer1 = addOperation("layer1", m_layer1.ptr(), 3);
+		o_layer1 = addOperation(this, "layer1", m_layer1.ptr(), 3);
 
 		copyOperations("layer2", m_layer2, 3);
-		o_layer2 = addOperation("layer2", m_layer2.ptr(), 3);
+		o_layer2 = addOperation(this, "layer2", m_layer2.ptr(), 3);
 
 		copyOperations("layer3", m_layer3, 3);
-		o_layer3 = addOperation("layer3", m_layer3.ptr(), 3);
+		o_layer3 = addOperation(this, "layer3", m_layer3.ptr(), 3);
 
 		copyOperations("layer4", m_layer4, 3);
-		o_layer4 = addOperation("layer4", m_layer4.ptr(), 3);
+		o_layer4 = addOperation(this, "layer4", m_layer4.ptr(), 3);
 
-		o_avgpool = addOperation("avgpool", m_avgpool.ptr());
-		o_fc = addOperation("fc", m_fc.ptr());
+		o_avgpool = addOperation(this, "avgpool", m_avgpool.ptr());
+		o_fc = addOperation(this, "fc", m_fc.ptr());
 	}
 
 	Tensor analyze(int warmup, int repeat, Tensor input, int level)
@@ -690,9 +694,11 @@ struct ResNet: public MyContainer
 
 		level -= 1;
 
+		contextData[level].resize(Scheduler::smOptions.size());
+
 		for (int i = 0; i < Scheduler::smOptions.size(); i++)
 		{
-			contextData[level].push_back(ContextData(Scheduler::selectContextByIndex(i)));
+			contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 
 			contextData[level][i].stackExecutionTime(o_conv1->contextData[i]);
 			contextData[level][i].stackExecutionTime(o_bn1->contextData[i]);
@@ -710,10 +716,11 @@ struct ResNet: public MyContainer
 		tempStack += m_layer3.assignExecutionTime(level + 1, contextIndex, 0);
 		tempStack += m_layer4.assignExecutionTime(level + 1, contextIndex, 0);
 
+		contextData[level].resize(Scheduler::smOptions.size());
 
 		for (int i = 0; i < Scheduler::smOptions.size(); i++)
 		{
-			contextData[level].push_back(ContextData(Scheduler::selectContextByIndex(i)));
+			contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 
 			contextData[level][i].stackExecutionTime(o_avgpool->contextData[i]);
 			contextData[level][i].stackExecutionTime(o_fc->contextData[i]);
@@ -740,28 +747,28 @@ struct ResNet: public MyContainer
 		deadlineStack += o_conv1->relativeDeadline[level];
 		o_conv1->stackedDeadline[level] = deadlineStack;
 
-		// cout << o_conv1->getFullName() << ": " << o_conv1->relativeDeadline[level] << "-->" << o_conv1->stackedDeadline[level] << endl;
+		// couts << o_conv1->getFullName() << ": " << o_conv1->relativeDeadline[level] << "-->" << o_conv1->stackedDeadline[level] << endl;
 
 		o_bn1->relativeDeadline[level] = o_bn1->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_bn1->relativeDeadline[level];
 		deadlineStack += o_bn1->relativeDeadline[level];
 		o_bn1->stackedDeadline[level] = deadlineStack;
 
-		// cout << o_bn1->getFullName() << ": " << o_bn1->relativeDeadline[level] << "-->" << o_bn1->stackedDeadline[level] << endl;
+		// couts << o_bn1->getFullName() << ": " << o_bn1->relativeDeadline[level] << "-->" << o_bn1->stackedDeadline[level] << endl;
 
 		o_relu->relativeDeadline[level] = o_relu->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_relu->relativeDeadline[level];
 		deadlineStack += o_relu->relativeDeadline[level];
 		o_relu->stackedDeadline[level] = deadlineStack;
 
-		// cout << o_relu->getFullName() << ": " << o_relu->relativeDeadline[level] << "-->" << o_relu->stackedDeadline[level] << endl;
+		// couts << o_relu->getFullName() << ": " << o_relu->relativeDeadline[level] << "-->" << o_relu->stackedDeadline[level] << endl;
 
 		o_maxpool->relativeDeadline[level] = o_maxpool->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_maxpool->relativeDeadline[level];
 		deadlineStack += o_maxpool->relativeDeadline[level];
 		o_maxpool->stackedDeadline[level] = deadlineStack;
 
-		// cout << o_maxpool->getFullName() << ": " << o_maxpool->relativeDeadline[level] << "-->" << o_maxpool->stackedDeadline[level] << endl;
+		// couts << o_maxpool->getFullName() << ": " << o_maxpool->relativeDeadline[level] << "-->" << o_maxpool->stackedDeadline[level] << endl;
 
 		tempStack = m_layer1.assignDeadline((m_layer1.regulatedExecutionTime[level] / regulatedExecutionTime[level]) * quota, level + 1, contextIndex, deadlineStack);
 		tempDeadline = tempStack - deadlineStack;
@@ -788,14 +795,14 @@ struct ResNet: public MyContainer
 		deadlineStack += o_avgpool->relativeDeadline[level];
 		o_avgpool->stackedDeadline[level] = deadlineStack;
 
-		// cout << o_avgpool->getFullName() << ": " << o_avgpool->relativeDeadline[level] << "-->" << o_avgpool->stackedDeadline[level] << endl;
+		// couts << o_avgpool->getFullName() << ": " << o_avgpool->relativeDeadline[level] << "-->" << o_avgpool->stackedDeadline[level] << endl;
 
 		o_fc->relativeDeadline[level] = o_fc->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		usedDeadline += o_fc->relativeDeadline[level];
 		deadlineStack += o_fc->relativeDeadline[level];
 		o_fc->stackedDeadline[level] = deadlineStack;
 
-		// cout << o_fc->getFullName() << ": " << o_fc->relativeDeadline[level] << "-->" << o_fc->stackedDeadline[level] << endl;
+		// couts << o_fc->getFullName() << ": " << o_fc->relativeDeadline[level] << "-->" << o_fc->stackedDeadline[level] << endl;
 
 		return deadlineStack;
 	}

@@ -1,6 +1,7 @@
 # ifndef __OPERATION__
 # define __OPERATION__
 
+# include <cnt.hpp>
 # include <ctxd.hpp>
 
 # include <torch/torch.h>
@@ -18,6 +19,8 @@ using namespace std::chrono;
 
 namespace FGPRS
 {
+	class MyContainer;
+
 	class Operation
 	{
 	private:
@@ -26,6 +29,7 @@ namespace FGPRS
 		Tensor* _output;
 		MyContext* _chosenContext;
 		bool _isException;
+		MyContainer* _parent;
 
 		static double exceptionThreshold;
 
@@ -44,8 +48,9 @@ namespace FGPRS
 		void setParentName(string parentName);
 
 		template <typename ModuleType>
-		Operation(string name, shared_ptr<ModuleType> module)
+		Operation(MyContainer* owner, string name, shared_ptr<ModuleType> module)
 		{
+			_parent = owner;
 			_name = name;
 			_fullName = name;
 			sequential = Sequential(module);
