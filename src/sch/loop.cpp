@@ -2,7 +2,6 @@
 
 # include <cnt.hpp>
 # include <schd.hpp>
-# include <log.hpp>
 
 # include <memory>
 # include <chrono>
