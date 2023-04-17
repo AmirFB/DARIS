@@ -22,10 +22,12 @@ Loop::Loop(string name, shared_ptr<MyContainer> container, double frequency, int
 {
 }
 
-void Loop::initialize(int deadlineContextIndex, Tensor dummyInput, int level)
+void Loop::initialize(int deadlineContextIndex, Tensor dummyInput, SchedulerType type, int level)
 {
 	_container->eval();
 	_container->to(kCUDA);
+
+	_container->initLoggers(_name);
 
 	for (int i = 0; i < 10; i++)
 	{
@@ -45,13 +47,11 @@ void Loop::initialize(int deadlineContextIndex, Tensor dummyInput, int level)
 
 	_container->assignOperations();
 
-	_container->analyze(1, 3, dummyInput, level);
-	// cout << endl << endl;
-	// _container->analyze(5, 10, dummyInput, 2);
-	// cout << endl << endl;
-	// _container->analyze(5, 10, dummyInput, 1);
-	cout << "Shall we?\n";
-	_container->assignExecutionTime(level, deadlineContextIndex, 0);
+	if (type == PROPOSED_SCHEDULER)
+	{
+		_container->analyze(5, 10, dummyInput, level);
+		_container->assignExecutionTime(level, deadlineContextIndex, 0);
+	}
 }
 
 void run(
@@ -59,18 +59,16 @@ void run(
 	double period, bool* stop, int level, int index,
 	SchedulerType type)
 {
+	NoGradGuard no_grad;
 	int frame = 0;
 	steady_clock::time_point startTime, nextTime;
 	auto interval = nanoseconds((int)round(period));
+	container->clearScheduleLogger(name);
 
 	if (type == PROPOSED_SCHEDULER)
-	{
-		container->assignDeadline(period / 1000 * 0.9, level, 3, 0);
-		// container->assignDeadline(period / 1000 * 0.9, 2, 3, 0);
-		// container->assignDeadline(period / 1000 * 0.9, 1, 3, 0);
-	}
+		container->assignDeadline(period / 1000 * 0.8, level, 3, 0);
 
-	else if (type == MPS_SCHEDULER || type == PMPS_SCHEDULER || type == PMPS_SCHEDULER)
+	else if (type == MPS_SCHEDULER || type == PMPS_SCHEDULER || type == PMPSO_SCHEDULER)
 	{
 		auto ctx = Scheduler::selectContextByIndex(index);
 		ctx->select();
@@ -87,10 +85,6 @@ void run(
 		nextTime += interval;
 
 		frame++;
-		// cout << "          Next: " << ((duration_cast<microseconds>(nextTime.time_since_epoch())).count() % 1000000) << endl;
-		// cout << "          Time: " << ((duration_cast<microseconds>(startTime.time_since_epoch())).count() % 1000000) << endl;
-		// cout << "          Time: " << ((duration_cast<milliseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
-
 		// auto now = std::chrono::system_clock::now();
 		// auto us = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
 		// std::time_t now_c = std::chrono::system_clock::to_time_t(now);
@@ -122,18 +116,17 @@ void run(
 
 			// else
 			// 	cout << name << "->Bevakhed: " << duration_cast<microseconds>(steady_clock::now() - nextTime).count() << "us" << endl;
+			container->scheduleLogger->info("Delayed : {}us", duration_cast<microseconds>(steady_clock::now() - nextTime).count());
 
-			if ((nextTime + interval) < steady_clock::now())
-			{
-				printf("OHA!!!\n");
-				break;
-			}
+			// if ((nextTime + interval) < steady_clock::now())
+			// 	printf("OHA!!!\n");
 
 			continue;
 		}
 
 		// cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
 		// cout << "Reserved: " << frame << "th " << name << " " << duration_cast<microseconds>(nextTime - steady_clock::now()).count() << "us" << endl;
+		container->scheduleLogger->info("Reserved: {}us", duration_cast<microseconds>(nextTime - steady_clock::now()).count());
 
 		this_thread::sleep_until(nextTime);
 	}
