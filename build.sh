@@ -12,6 +12,6 @@ export CFLAGS="-I$CUDA_HOME/include $CFLAGS"
 # export $CMAKE_CUDA_COMPILER=/home/amir/anaconda3/envs/lt-source/bin/nvcc
 
 # export LDFLAGS="-libc++=libstdc++"
-
-cmake -DCMAKE_PREFIX_PATH=/home/amir/repos/FGPRS/libtorch-install/ -DCMAKE_CXX_STANDARD=20 ..
+# export CXXFLAGS="-lstdc++fs -std=c++20"
+cmake -DCMAKE_PREFIX_PATH=/home/amir/repos/FGPRS/libtorch-install/ ..
 cmake --build . --config Release -j32

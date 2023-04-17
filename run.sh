@@ -10,6 +10,7 @@ export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$LD_LIBRARY_PATH"
 
 sudo nvidia-smi -pl 280
 
+export TORCH_NO_GRAD=1
 ./build/fgprs proposed
 	
 echo quit | nvidia-cuda-mps-control
