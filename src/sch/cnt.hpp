@@ -39,14 +39,18 @@ namespace FGPRS
 
 		vector<shared_ptr<MyContainer>> containers;
 		int _maxLevel = 0;
+		string _name;
 
-		shared_ptr<spdlog::logger> analyzeLogger, deadlineLogger, schedulerLogger;
+		shared_ptr<spdlog::logger> analyzeLogger, deadlineLogger, scheduleLogger;
 
 		vector<vector<ContextData>> contextData
 			= { vector<ContextData>(), vector<ContextData>(), vector<ContextData>() };
 
 		MyContainer(): Module() {}
 		MyContainer(const MyContainer& container): Module(container) {}
+
+		void initLoggers(string name);
+		void clearScheduleLogger(string name);
 
 		virtual void assignOperations() {}
 		vector<shared_ptr<Operation>> getOperations(int level);

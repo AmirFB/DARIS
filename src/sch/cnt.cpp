@@ -10,6 +10,7 @@
 # include <chrono>
 # include <thread>
 # include <unistd.h>
+# include <filesystem>
 
 using namespace torch;
 using namespace torch::nn;
@@ -18,6 +19,35 @@ using namespace FGPRS;
 
 using namespace std;
 using namespace std::chrono;
+
+
+void MyContainer::initLoggers(string name)
+{
+	_name = name;
+
+	mkdir(("logs/" + name).c_str(), 0777);
+
+	remove(("logs/" + name + "/analyze.log").c_str());
+	remove(("logs/" + name + "/deadline.log").c_str());
+	remove(("logs/" + name + "/schedule.log").c_str());
+
+	analyzeLogger = spdlog::basic_logger_mt(name + "_analyze", "logs/" + name + "/analyze.log");
+	deadlineLogger = spdlog::basic_logger_mt(name + "_deadline", "logs/" + name + "/deadline.log");
+	scheduleLogger = spdlog::basic_logger_mt(name + "_schedule", "logs/" + name + "/schedule.log");
+
+	analyzeLogger->set_pattern("[%S.%f] %v");
+	analyzeLogger->flush_on(spdlog::level::info);
+	deadlineLogger->set_pattern("[%S.%f] %v");
+	scheduleLogger->set_pattern("[%S.%f] %v");
+}
+
+void MyContainer::clearScheduleLogger(string name)
+{
+	remove(("logs/" + name + "/schedule.log").c_str());
+	spdlog::drop(name + "_schedule");
+	scheduleLogger = spdlog::basic_logger_mt(name + "_schedule", "logs/" + name + "/schedule.log");
+	scheduleLogger->set_pattern("[%S.%f] %v");
+}
 
 vector<shared_ptr<Operation>> MyContainer::getOperations(int level)
 {
@@ -54,7 +84,7 @@ void MyContainer::copyOperations(string parentName, MyContainer& container, int 
 Tensor MyContainer::schedule(string name, Tensor input, int level)
 {
 	for (auto op : operations[level - 1])
-		input = op->scheduleSync(name, input);
+		input = op->scheduleSync(input);
 
 	return input;
 }

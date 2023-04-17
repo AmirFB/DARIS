@@ -21,9 +21,9 @@
 # include <cudaTypedefs.h>
 # include <cuda_runtime.h>
 
+# include <loop.hpp>
 # include <schd.hpp>
 # include <cnt.hpp>
-# include <loop.hpp>
 
 # include <cif10.hpp>
 # include <resnet.hpp>
@@ -45,7 +45,7 @@ using namespace torch;
 using namespace torch::nn;
 using namespace FGPRS;
 
-# define MODULES_COUNT 5
+# define MODULES_COUNT 35
 # define REPEAT 1
 
 shared_ptr<logger> logger;
@@ -54,6 +54,8 @@ void distributeSMs(int* array, int total, int count);
 
 int main(int argc, char** argv)
 {
+	auto logger = spdlog::basic_logger_mt("main_logger", "log.log");
+	logger->set_pattern("[%S.%f] %v");
 	NoGradGuard no_grad;
 	int level = 3;
 
@@ -65,7 +67,7 @@ int main(int argc, char** argv)
 	{
 		type = PROPOSED_SCHEDULER;
 		smCount = 4;
-		smOptions = new int[] { 20, 36, 48, 60 };
+		smOptions = new int[] { 10, 20, 30, 40 };
 	}
 
 	else if (!strcmp(argv[1], "mps"))
@@ -101,7 +103,7 @@ int main(int argc, char** argv)
 		smOptions = new int[] {68};
 	}
 
-	Scheduler::initialize(smOptions, smCount);
+	Scheduler::initialize(smOptions, smCount, type);
 
 	Tensor inputs[MODULES_COUNT];
 	shared_ptr<ResNet<BasicBlock>> mods[MODULES_COUNT];
@@ -111,13 +113,10 @@ int main(int argc, char** argv)
 	{
 		string name = "res";
 
-		for (int j = 0; j < i; j++)
-			name = "    " + name;
-
 		inputs[i] = torch::randn({ 1, 3, 224, 224 }, kCUDA);
 		mods[i] = resnet18(1000);
-		loops[i] = Loop(name + to_string(i + 1), mods[i], 95, i);
-		loops[i].initialize(3, inputs[i], level);
+		loops[i] = Loop(name + to_string(i + 1), mods[i], 20, i);
+		loops[i].initialize(3, inputs[i], type, level);
 	}
 
 	for (int i = 0; i < MODULES_COUNT; i++)
@@ -130,7 +129,10 @@ int main(int argc, char** argv)
 
 	cout << endl << endl << endl << endl << endl;
 
-	// system("clear");
+	system("clear");
+	cout << "Here we go ...\n";
+
+	logger->info("Started!");
 
 	for (int j = 0; j < REPEAT; j++)
 	{
@@ -144,6 +146,8 @@ int main(int argc, char** argv)
 
 		cout << endl << endl << endl << endl << endl;
 	}
+
+	logger->info("Finished!");
 
 	// char *op = argv[1];
 	// mkdir("results", 0777 );
