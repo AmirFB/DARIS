@@ -3,6 +3,8 @@
 
 # include <ctx.hpp>
 
+# include <loop.hpp>
+
 # include <chrono>
 # include <cstdint>
 # include <vector>
@@ -31,7 +33,7 @@ namespace FGPRS
 		static future<void>* _th;
 
 	public:
-		static bool initialize(int[], int);
+		static bool initialize(int[], int, SchedulerType type = NOMPS_SCHEDULER);
 		static MyContext* selectContext(int);
 		static MyContext* selectContextByIndex(int index);
 		static MyContext* selectDefaultContext();

@@ -25,7 +25,7 @@ MyContext Scheduler::_defaultContext;
 Sequential* Scheduler::_dummyModule;
 Tensor* Scheduler::_dummyInput;
 
-bool Scheduler::initialize(int options[], int size)
+bool Scheduler::initialize(int options[], int size, SchedulerType type)
 {
 	bool result = true;
 	cudaDeviceProp prop;
@@ -39,18 +39,21 @@ bool Scheduler::initialize(int options[], int size)
 	_dummyModule = new Sequential[size - 1];
 	_dummyInput = new Tensor[size - 1];
 
-	for (int i = 0; i < (size - 1); i++)
+	if (type == PROPOSED_SCHEDULER)
 	{
-		_dummyInput[i] = torch::randn({ 1, 3, 900, 1600 }, kCUDA);
-		_dummyModule[i] = Sequential(
-			Conv2d(Conv2dOptions(3, 16, 7).stride(2).padding(3)),
-			BatchNorm2d(16),
-			ReLU(),
-			MaxPool2d(MaxPool2dOptions(2))
-		);
+		for (int i = 0; i < (size - 1); i++)
+		{
+			_dummyInput[i] = torch::randn({ 1, 16, 224, 224 }, kCUDA);
+			_dummyModule[i] = Sequential(
+				Conv2d(Conv2dOptions(16, 32, 3).stride(1).padding(3)),
+				BatchNorm2d(32),
+				ReLU(),
+				MaxPool2d(MaxPool2dOptions(2))
+			);
 
-		_dummyModule[i]->eval();
-		_dummyModule[i]->to(kCUDA);
+			_dummyModule[i]->eval();
+			_dummyModule[i]->to(kCUDA);
+		}
 	}
 
 	for (int i = 0; i < size; i++)
@@ -122,10 +125,9 @@ float Scheduler::getMemoryPercentage()
 	return Scheduler::getFreeMemoryMB() / Scheduler::getTotalMemoryMB() * 100;
 }
 
-// mutex mtx;
-
 void Scheduler::dummyFunction(MyContext* ctx, Sequential* mod, Tensor* in)
 {
+	NoGradGuard no_grad;
 	int counter = 0;
 	ctx->select();
 
@@ -238,9 +240,9 @@ MyContext* Scheduler::getMinimalContext(Operation* operation)
 	else
 	{
 		ctx2->queueOperation(operation);
+		globalMutex.unlock();
 		ctx2->lock();
 
-		globalMutex.unlock();
 		return ctx2;
 	}
 }
@@ -264,9 +266,9 @@ MyContext* Scheduler::getFastestContext(Operation* operation)
 		}
 	}
 
+	globalMutex.unlock();
 	ctx->queueOperation(operation);
 	ctx->lock();
 
-	globalMutex.unlock();
 	return ctx;
 }
