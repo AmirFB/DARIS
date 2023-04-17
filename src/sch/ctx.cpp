@@ -63,12 +63,12 @@ bool MyContext::release()
 
 void MyContext::lock()
 {
-	_pMutex->lock();
+	// _pMutex->lock();
 }
 
 void MyContext::unlock()
 {
-	_pMutex->unlock();
+	// _pMutex->unlock();
 }
 
 void MyContext::queueOperation(Operation* operation)
