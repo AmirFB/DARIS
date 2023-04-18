@@ -28,7 +28,7 @@ public:
 class ASPPImpl : public torch::nn::Module
 {
 public:
-	ASPPImpl(int in_channels, int out_channels, std::vector<int> atrous_rates, bool separable = false);
+	ASPPImpl(int in_channels, int out_channels, vector<int> atrous_rates, bool separable = false);
 	torch::Tensor forward(torch::Tensor x);
 private:
 	torch::nn::ModuleList modules{};
@@ -39,8 +39,8 @@ private:
 class DeepLabV3DecoderImpl : public torch::nn::Module
 {
 public:
-	DeepLabV3DecoderImpl(int in_channels, int out_channels = 256, std::vector<int> atrous_rates = { 12, 24, 36 });
-	torch::Tensor forward(std::vector< torch::Tensor> x);
+	DeepLabV3DecoderImpl(int in_channels, int out_channels = 256, vector<int> atrous_rates = { 12, 24, 36 });
+	torch::Tensor forward(vector< torch::Tensor> x);
 	int out_channels = 0;
 private:
 	torch::nn::Sequential seq{};
@@ -49,9 +49,9 @@ private:
 class DeepLabV3PlusDecoderImpl :public torch::nn::Module
 {
 public:
-	DeepLabV3PlusDecoderImpl(std::vector<int> encoder_channels, int out_channels,
-		std::vector<int> atrous_rates, int output_stride = 16);
-	torch::Tensor forward(std::vector< torch::Tensor> x);
+	DeepLabV3PlusDecoderImpl(vector<int> encoder_channels, int out_channels,
+		vector<int> atrous_rates, int output_stride = 16);
+	torch::Tensor forward(vector< torch::Tensor> x);
 private:
 	ASPP aspp{ nullptr };
 	torch::nn::Sequential aspp_seq{ nullptr };

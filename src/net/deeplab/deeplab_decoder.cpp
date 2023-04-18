@@ -43,12 +43,12 @@ torch::Tensor ASPPPoolingImpl::forward(torch::Tensor x)
 	return x;
 }
 
-ASPPImpl::ASPPImpl(int in_channels, int out_channels, std::vector<int> atrous_rates, bool separable)
+ASPPImpl::ASPPImpl(int in_channels, int out_channels, vector<int> atrous_rates, bool separable)
 {
 	modules->push_back(torch::nn::Sequential(torch::nn::Conv2d(conv_options(in_channels, out_channels, 1, 1, 0, 1, false)),
 		torch::nn::BatchNorm2d(torch::nn::BatchNorm2dOptions(out_channels)),
 		torch::nn::ReLU()));
-	if (atrous_rates.size() != 3) std::cout << "size of atrous_rates must be 3";
+	if (atrous_rates.size() != 3) cout << "size of atrous_rates must be 3";
 	if (separable)
 	{
 		modules->push_back(ASPPSeparableConv(in_channels, out_channels, atrous_rates[0]));
@@ -76,7 +76,7 @@ ASPPImpl::ASPPImpl(int in_channels, int out_channels, std::vector<int> atrous_ra
 
 torch::Tensor ASPPImpl::forward(torch::Tensor x)
 {
-	std::vector<torch::Tensor> res;
+	vector<torch::Tensor> res;
 	for (int i = 0; i < 4; i++)
 	{
 		res.push_back(modules[i]->as<torch::nn::Sequential>()->forward(x));
@@ -87,7 +87,7 @@ torch::Tensor ASPPImpl::forward(torch::Tensor x)
 	return x;
 }
 
-DeepLabV3DecoderImpl::DeepLabV3DecoderImpl(int in_channels, int out_channels, std::vector<int> atrous_rates)
+DeepLabV3DecoderImpl::DeepLabV3DecoderImpl(int in_channels, int out_channels, vector<int> atrous_rates)
 {
 	seq->push_back(ASPP(in_channels, out_channels, atrous_rates));
 	seq->push_back(torch::nn::Conv2d(conv_options(out_channels, out_channels, 3, 1, 1, 1, false)));
@@ -97,22 +97,22 @@ DeepLabV3DecoderImpl::DeepLabV3DecoderImpl(int in_channels, int out_channels, st
 	register_module("seq", seq);
 }
 
-torch::Tensor DeepLabV3DecoderImpl::forward(std::vector< torch::Tensor> x_list)
+torch::Tensor DeepLabV3DecoderImpl::forward(vector< torch::Tensor> x_list)
 {
 	auto x = seq->forward(x_list[x_list.size() - 1]);
 	return x;
 }
 
-DeepLabV3PlusDecoderImpl::DeepLabV3PlusDecoderImpl(std::vector<int> encoder_channels, int out_channels,
-	std::vector<int> atrous_rates, int output_stride)
+DeepLabV3PlusDecoderImpl::DeepLabV3PlusDecoderImpl(vector<int> encoder_channels, int out_channels,
+	vector<int> atrous_rates, int output_stride)
 {
-	if (output_stride != 8 && output_stride != 16) std::cout << "Output stride should be 8 or 16";
+	if (output_stride != 8 && output_stride != 16) cout << "Output stride should be 8 or 16";
 	aspp = ASPP(encoder_channels[encoder_channels.size() - 1], out_channels, atrous_rates, true);
 	aspp_seq = SeparableConv2d(out_channels, out_channels, 3, 1, 1, 1, false);
 	aspp_seq->push_back(torch::nn::BatchNorm2d(torch::nn::BatchNorm2dOptions(out_channels)));
 	aspp_seq->push_back(torch::nn::ReLU());
 	double scale_factor = double(output_stride / 4);
-	up = torch::nn::Upsample(torch::nn::UpsampleOptions().align_corners(true).scale_factor(std::vector<double>({ scale_factor,scale_factor })).mode(torch::kBilinear));
+	up = torch::nn::Upsample(torch::nn::UpsampleOptions().align_corners(true).scale_factor(vector<double>({ scale_factor,scale_factor })).mode(torch::kBilinear));
 	int highres_in_channels = encoder_channels[encoder_channels.size() - 4];
 	int highres_out_channels = 48; // proposed by authors of paper
 
@@ -130,7 +130,7 @@ DeepLabV3PlusDecoderImpl::DeepLabV3PlusDecoderImpl(std::vector<int> encoder_chan
 	register_module("block2", block2);
 }
 
-torch::Tensor DeepLabV3PlusDecoderImpl::forward(std::vector<torch::Tensor> x_list)
+torch::Tensor DeepLabV3PlusDecoderImpl::forward(vector<torch::Tensor> x_list)
 {
 	auto aspp_features = aspp->forward(x_list[x_list.size() - 1]);
 	aspp_features = aspp_seq->forward(aspp_features);

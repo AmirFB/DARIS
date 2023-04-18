@@ -4,28 +4,28 @@
 // CIFAR dataset
 // https://www.cs.toronto.edu/~kriz/cifar.html
 
-#include <bits/stdint-uintn.h>
-#include <cassert>
-#include <fstream>
-#include <iostream>
-#include <string>
-#include <torch/torch.h>
-#include <vector>
+# include <bits/stdint-uintn.h>
+# include <cassert>
+# include <fstream>
+# include <iostream>
+# include <string>
+# include <torch/torch.h>
+# include <vector>
 
-#include <cif10.hpp>
+# include <cif10.hpp>
 
-const std::vector<std::string> train_set_file_names{
+const vector<string> train_set_file_names{
 	"data_batch_1.bin", "data_batch_2.bin", "data_batch_3.bin",
 		"data_batch_4.bin", "data_batch_5.bin"};
-const std::vector<std::string> test_set_file_names{"test_batch.bin"};
-const std::string meta_data_file_name{"batches.meta.txt"};
+const vector<string> test_set_file_names{"test_batch.bin"};
+const string meta_data_file_name{"batches.meta.txt"};
 
 constexpr const uint32_t num_samples_per_file{ 10000 };
 constexpr const uint32_t image_height{ 32 };
 constexpr const uint32_t image_width{ 32 };
 constexpr const uint32_t image_channels{ 3 };
 
-std::string join_paths(std::string head, const std::string& tail)
+string join_paths(string head, const string& tail)
 {
 	if (head.back() != '/')
 	{
@@ -35,18 +35,18 @@ std::string join_paths(std::string head, const std::string& tail)
 	return head;
 }
 
-torch::Tensor read_targets_from_file(const std::string& file_path)
+torch::Tensor read_targets_from_file(const string& file_path)
 {
 	torch::Tensor targets =
 		torch::empty({ num_samples_per_file * 1 }, torch::kUInt8);
 	uint8_t* ptr_data = targets.data_ptr<uint8_t>();
 
 	uint32_t count{ 0 };
-	std::fstream f;
+	fstream f;
 	f.open(file_path, f.binary | f.in);
 	if (!f.is_open())
 	{
-		std::cerr << "Failed to open " << file_path << std::endl;
+		cerr << "Failed to open " << file_path << endl;
 		// TORCH_CHECK(f, "Error opening targets file at ", file_path);
 	}
 	else
@@ -68,7 +68,7 @@ torch::Tensor read_targets_from_file(const std::string& file_path)
 	return targets;
 }
 
-torch::Tensor read_images_from_file(const std::string& file_path)
+torch::Tensor read_images_from_file(const string& file_path)
 {
 	constexpr const uint32_t num_image_bytes{ image_height * image_width *
 																					 image_channels * 1 };
@@ -78,11 +78,11 @@ torch::Tensor read_images_from_file(const std::string& file_path)
 	uint8_t* ptr_data = images.data_ptr<uint8_t>();
 
 	uint32_t count{ 0 };
-	std::fstream f;
+	fstream f;
 	f.open(file_path, f.binary | f.in);
 	if (!f.is_open())
 	{
-		std::cerr << "Failed to open " << file_path << std::endl;
+		cerr << "Failed to open " << file_path << endl;
 		// TORCH_CHECK(f, "Error opening images file at ", file_path);
 	}
 	else
@@ -111,9 +111,9 @@ torch::Tensor read_images_from_file(const std::string& file_path)
 	return images;
 }
 
-torch::Tensor read_images(const std::string& root, bool train)
+torch::Tensor read_images(const string& root, bool train)
 {
-	std::vector<std::string> data_set_file_names;
+	vector<string> data_set_file_names;
 	if (train)
 	{
 		data_set_file_names = train_set_file_names;
@@ -123,15 +123,15 @@ torch::Tensor read_images(const std::string& root, bool train)
 		data_set_file_names = test_set_file_names;
 	}
 
-	std::vector<std::string> data_set_file_paths;
-	for (const std::string& data_set_file_name : data_set_file_names)
+	vector<string> data_set_file_paths;
+	for (const string& data_set_file_name : data_set_file_names)
 	{
 		data_set_file_paths.push_back(join_paths(root, data_set_file_name));
 	}
 
-	std::vector<torch::Tensor> image_tensors;
+	vector<torch::Tensor> image_tensors;
 
-	for (const std::string& data_set_file_path : data_set_file_paths)
+	for (const string& data_set_file_path : data_set_file_paths)
 	{
 		torch::Tensor images = read_images_from_file(data_set_file_path);
 		image_tensors.push_back(images);
@@ -144,9 +144,9 @@ torch::Tensor read_images(const std::string& root, bool train)
 	return images;
 }
 
-torch::Tensor read_targets(const std::string& root, bool train)
+torch::Tensor read_targets(const string& root, bool train)
 {
-	std::vector<std::string> data_set_file_names;
+	vector<string> data_set_file_names;
 	if (train)
 	{
 		data_set_file_names = train_set_file_names;
@@ -156,15 +156,15 @@ torch::Tensor read_targets(const std::string& root, bool train)
 		data_set_file_names = test_set_file_names;
 	}
 
-	std::vector<std::string> data_set_file_paths;
-	for (const std::string& data_set_file_name : data_set_file_names)
+	vector<string> data_set_file_paths;
+	for (const string& data_set_file_name : data_set_file_names)
 	{
 		data_set_file_paths.push_back(join_paths(root, data_set_file_name));
 	}
 
-	std::vector<torch::Tensor> target_tensors;
+	vector<torch::Tensor> target_tensors;
 
-	for (const std::string& data_set_file_path : data_set_file_paths)
+	for (const string& data_set_file_path : data_set_file_paths)
 	{
 		torch::Tensor targets = read_targets_from_file(data_set_file_path);
 		target_tensors.push_back(targets);
@@ -177,7 +177,7 @@ torch::Tensor read_targets(const std::string& root, bool train)
 	return targets;
 }
 
-CIFAR10::CIFAR10(const std::string& root, Mode mode)
+CIFAR10::CIFAR10(const string& root, Mode mode)
 	: images_(read_images(root, mode == Mode::kTrain)),
 	targets_(read_targets(root, mode == Mode::kTrain))
 {

@@ -1,6 +1,6 @@
-#include "VGG.h"
+# include "VGG.h"
 
-torch::nn::Sequential make_features(std::vector<int>& cfg, bool batch_norm)
+torch::nn::Sequential make_features(vector<int>& cfg, bool batch_norm)
 {
 	torch::nn::Sequential features;
 	int in_channels = 3;
@@ -25,7 +25,7 @@ torch::nn::Sequential make_features(std::vector<int>& cfg, bool batch_norm)
 	return features;
 }
 
-VGGImpl::VGGImpl(std::vector<int> _cfg, int num_classes, bool batch_norm_)
+VGGImpl::VGGImpl(vector<int> _cfg, int num_classes, bool batch_norm_)
 {
 	cfg = _cfg;
 	batch_norm = batch_norm_;
@@ -53,9 +53,9 @@ torch::Tensor VGGImpl::forward(torch::Tensor x)
 }
 
 
-std::vector<torch::Tensor> VGGImpl::features(torch::Tensor x, int encoder_depth)
+vector<torch::Tensor> VGGImpl::features(torch::Tensor x, int encoder_depth)
 {
-	std::vector<torch::Tensor> ans;
+	vector<torch::Tensor> ans;
 
 	int j = 0;// layer index of features_
 	for (int i = 0; i < cfg.size(); i++)
@@ -114,13 +114,13 @@ torch::Tensor VGGImpl::features_at(torch::Tensor x, int stage_num)
 	return x;
 }
 
-void VGGImpl::load_pretrained(std::string pretrained_path)
+void VGGImpl::load_pretrained(string pretrained_path)
 {
 	VGG net_pretrained = VGG(cfg, 1000, batch_norm);
 	torch::load(net_pretrained, pretrained_path);
 
-	torch::OrderedDict<std::string, at::Tensor> pretrained_dict = net_pretrained->named_parameters();
-	torch::OrderedDict<std::string, at::Tensor> model_dict = this->named_parameters();
+	torch::OrderedDict<string, at::Tensor> pretrained_dict = net_pretrained->named_parameters();
+	torch::OrderedDict<string, at::Tensor> model_dict = this->named_parameters();
 
 	for (auto n = pretrained_dict.begin(); n != pretrained_dict.end(); n++)
 	{
@@ -156,8 +156,8 @@ void VGGImpl::load_pretrained(std::string pretrained_path)
 	return;
 }
 
-void VGGImpl::make_dilated(std::vector<int> stage_list, std::vector<int> dilation_list)
+void VGGImpl::make_dilated(vector<int> stage_list, vector<int> dilation_list)
 {
-	std::cout << "'VGG' models do not support dilated mode due to Max Pooling operations for downsampling!";
+	cout << "'VGG' models do not support dilated mode due to Max Pooling operations for downsampling!";
 	return;
 }

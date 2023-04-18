@@ -1,24 +1,24 @@
 //
 // Created by root on 2021/4/9.
 //
-#include <functional>
-#include <algorithm>
+# include <functional>
+# include <algorithm>
 #ifdef _WIN32
-#include "_dirent.h"
+# include "_dirent.h"
 #else 
-#include <dirent.h>
+# include <dirent.h>
 #endif
-#include <vector>
+# include <vector>
 
 #ifndef READ_FILE_READFILE_H
-#define READ_FILE_READFILE_H
+# define READ_FILE_READFILE_H
 
-//#define throw_if(expression) if(expression)throw "error"
+//# define throw_if(expression) if(expression)throw "error"
 // 判断是否是文件夹
 inline bool is_folder(const char* dir_name)
 {
 	if (nullptr == dir_name)
-		std::cout << "dir_name is nullprt";
+		cout << "dir_name is nullprt";
 	//throw_if(nullptr==dir_name);
 	auto dir = opendir(dir_name);
 	if (dir)
@@ -40,29 +40,29 @@ inline char file_sepator()
 }
 #endif
 // 判断是否是文件夹
-inline bool is_folder(const std::string& dir_name)
+inline bool is_folder(const string& dir_name)
 {
 	if (dir_name.empty())
-		std::cout << "dir_name is empty";
+		cout << "dir_name is empty";
 	return is_folder(dir_name.data());
 }
-using file_filter_type = std::function<bool(const char*, const char*)>;
+using file_filter_type = function<bool(const char*, const char*)>;
 /*
  * 列出指定目录的所有文件(不包含目录)执行，对每个文件执行filter过滤器，
- * filter返回true时将文件名全路径加入std::vector
+ * filter返回true时将文件名全路径加入vector
  * sub为true时为目录递归
  * 返回每个文件的全路径名
 */
-static  std::vector<std::string> for_each_file(const std::string& dir_name, file_filter_type filter, bool sub = false)
+static  vector<string> for_each_file(const string& dir_name, file_filter_type filter, bool sub = false)
 {
-	std::vector<std::string> v;
+	vector<string> v;
 	auto dir = opendir(dir_name.data());
 	struct dirent* ent;
 	if (dir)
 	{
 		while ((ent = readdir(dir)) != nullptr)
 		{
-			auto p = std::string(dir_name).append({ file_sepator() }).append(ent->d_name);
+			auto p = string(dir_name).append({ file_sepator() }).append(ent->d_name);
 			if (sub)
 			{
 				if (0 == strcmp(ent->d_name, "..") || 0 == strcmp(ent->d_name, "."))
@@ -85,14 +85,14 @@ static  std::vector<std::string> for_each_file(const std::string& dir_name, file
 	return v;
 }
 //字符串大小写转换
-inline std::string tolower1(const std::string& src)
+inline string tolower1(const string& src)
 {
 	auto dst = src;
-	std::transform(src.begin(), src.end(), dst.begin(), ::tolower);
+	transform(src.begin(), src.end(), dst.begin(), ::tolower);
 	return dst;
 }
 // 判断src是否以指定的字符串(suffix)结尾
-inline bool end_with(const std::string& src, const std::string& suffix)
+inline bool end_with(const string& src, const string& suffix)
 {
 	return src.substr(src.size() - suffix.size()) == suffix;
 }

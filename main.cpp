@@ -39,7 +39,7 @@
 # include <c10/cuda/CUDACachingAllocator.h>
 
 using namespace std;
-using namespace std::chrono;
+using namespace chrono;
 using namespace spdlog;
 using namespace torch;
 using namespace torch::nn;

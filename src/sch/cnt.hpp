@@ -18,7 +18,7 @@ using namespace torch;
 using namespace torch::nn;
 
 using namespace std;
-using namespace std::chrono;
+using namespace chrono;
 using namespace spdlog;
 
 namespace FGPRS

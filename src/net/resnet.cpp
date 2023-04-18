@@ -61,12 +61,12 @@ struct BasicBlock: public MyContainer
 	{
 		if ((groups != 1) || (base_width != 64))
 		{
-			throw std::invalid_argument{
+			throw invalid_argument{
 				"BasicBlock only supports groups=1 and base_width=64"};
 		}
 		if (dilation > 1)
 		{
-			throw std::invalid_argument{
+			throw invalid_argument{
 				"Dilation > 1 not supported in BasicBlock"};
 		}
 		m_conv1 =
@@ -443,13 +443,13 @@ public:
 	}
 };
 
-template <typename Block, typename = std::enable_if_t<std::is_base_of<MyContainer, Block>::value>>
+template <typename Block, typename = enable_if_t<is_base_of<MyContainer, Block>::value>>
 struct ResNet: public MyContainer
 {
-	ResNet(const std::vector<int64_t> layers, int64_t num_classes = 1000,
+	ResNet(const vector<int64_t> layers, int64_t num_classes = 1000,
 		bool zero_init_residual = false, int64_t groups = 1,
 		int64_t width_per_group = 64,
-		std::vector<int64_t> replace_stride_with_dilation = {})
+		vector<int64_t> replace_stride_with_dilation = {})
 	{
 		if (replace_stride_with_dilation.size() == 0)
 		{
@@ -459,7 +459,7 @@ struct ResNet: public MyContainer
 		}
 		if (replace_stride_with_dilation.size() != 3)
 		{
-			throw std::invalid_argument{
+			throw invalid_argument{
 				"replace_stride_with_dilation should be empty or have exactly "
 					"three elements."};
 		}
@@ -510,7 +510,7 @@ struct ResNet: public MyContainer
 		{
 			if (m->name() == "Conv2dImpl")
 			{
-				OrderedDict<std::string, Tensor>
+				OrderedDict<string, Tensor>
 					named_parameters = m->named_parameters(false);
 				Tensor* ptr_w = named_parameters.find("weight");
 				init::kaiming_normal_(*ptr_w, 0, kFanOut,
@@ -519,7 +519,7 @@ struct ResNet: public MyContainer
 			else if ((m->name() == "BatchNormImpl") ||
 				(m->name() == "GroupNormImpl"))
 			{
-				OrderedDict<std::string, Tensor>
+				OrderedDict<string, Tensor>
 					named_parameters = m->named_parameters(false);
 				Tensor* ptr_w = named_parameters.find("weight");
 				init::constant_(*ptr_w, 1.0);
@@ -534,7 +534,7 @@ struct ResNet: public MyContainer
 			{
 				if (m->name() == "Bottleneck")
 				{
-					OrderedDict<std::string, Tensor>
+					OrderedDict<string, Tensor>
 						named_parameters =
 						m->named_modules()["bn3"]->named_parameters(false);
 					Tensor* ptr_w = named_parameters.find("weight");
@@ -542,7 +542,7 @@ struct ResNet: public MyContainer
 				}
 				else if (m->name() == "BasicBlock")
 				{
-					OrderedDict<std::string, Tensor>
+					OrderedDict<string, Tensor>
 						named_parameters =
 						m->named_modules()["bn2"]->named_parameters(false);
 					Tensor* ptr_w = named_parameters.find("weight");
@@ -892,127 +892,127 @@ struct ResNet: public MyContainer
 };
 
 template <class Block>
-std::shared_ptr<ResNet<Block>>
-_resnet(const std::vector<int64_t>& layers, int64_t num_classes = 1000,
+shared_ptr<ResNet<Block>>
+_resnet(const vector<int64_t>& layers, int64_t num_classes = 1000,
 	bool zero_init_residual = false, int64_t groups = 1,
 	int64_t width_per_group = 64,
-	const std::vector<int64_t>& replace_stride_with_dilation = {})
+	const vector<int64_t>& replace_stride_with_dilation = {})
 {
-	std::shared_ptr<ResNet<Block>> model = std::make_shared<ResNet<Block>>(
+	shared_ptr<ResNet<Block>> model = make_shared<ResNet<Block>>(
 		layers, num_classes, zero_init_residual, groups, width_per_group,
 		replace_stride_with_dilation);
 	return model;
 }
 
-std::shared_ptr<ResNet<BasicBlock>>
+shared_ptr<ResNet<BasicBlock>>
 resnet18(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {})
+	vector<int64_t> replace_stride_with_dilation = {})
 {
-	const std::vector<int64_t> layers{2, 2, 2, 2};
-	std::shared_ptr<ResNet<BasicBlock>> model =
+	const vector<int64_t> layers{2, 2, 2, 2};
+	shared_ptr<ResNet<BasicBlock>> model =
 		_resnet<BasicBlock>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
 	return model;
 }
 
-std::shared_ptr<ResNet<BasicBlock>>
+shared_ptr<ResNet<BasicBlock>>
 resnet34(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {})
+	vector<int64_t> replace_stride_with_dilation = {})
 {
-	const std::vector<int64_t> layers{3, 4, 6, 3};
-	std::shared_ptr<ResNet<BasicBlock>> model =
+	const vector<int64_t> layers{3, 4, 6, 3};
+	shared_ptr<ResNet<BasicBlock>> model =
 		_resnet<BasicBlock>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
 	return model;
 }
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 resnet50(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {})
+	vector<int64_t> replace_stride_with_dilation = {})
 {
-	const std::vector<int64_t> layers{3, 4, 6, 3};
-	std::shared_ptr<ResNet<Bottleneck>> model =
+	const vector<int64_t> layers{3, 4, 6, 3};
+	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
 	return model;
 }
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 resnet101(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {})
+	vector<int64_t> replace_stride_with_dilation = {})
 {
-	const std::vector<int64_t> layers{3, 4, 23, 3};
-	std::shared_ptr<ResNet<Bottleneck>> model =
+	const vector<int64_t> layers{3, 4, 23, 3};
+	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
 	return model;
 }
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 resnet152(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {})
+	vector<int64_t> replace_stride_with_dilation = {})
 {
-	const std::vector<int64_t> layers{3, 8, 36, 3};
-	std::shared_ptr<ResNet<Bottleneck>> model =
+	const vector<int64_t> layers{3, 8, 36, 3};
+	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
 	return model;
 }
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 resnext50_32x4d(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {})
+	vector<int64_t> replace_stride_with_dilation = {})
 {
 	groups = 32;
 	width_per_group = 4;
-	const std::vector<int64_t> layers{3, 4, 6, 3};
-	std::shared_ptr<ResNet<Bottleneck>> model =
+	const vector<int64_t> layers{3, 4, 6, 3};
+	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
 	return model;
 }
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 resnext101_32x8d(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {})
+	vector<int64_t> replace_stride_with_dilation = {})
 {
 	groups = 32;
 	width_per_group = 8;
-	const std::vector<int64_t> layers{3, 4, 23, 3};
-	std::shared_ptr<ResNet<Bottleneck>> model =
+	const vector<int64_t> layers{3, 4, 23, 3};
+	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
 	return model;
 }
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 wide_resnet50_2(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {})
+	vector<int64_t> replace_stride_with_dilation = {})
 {
 	width_per_group = 64 * 2;
-	const std::vector<int64_t> layers{3, 4, 6, 3};
-	std::shared_ptr<ResNet<Bottleneck>> model =
+	const vector<int64_t> layers{3, 4, 6, 3};
+	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
 	return model;
 }
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 wide_resnet101_2(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {})
+	vector<int64_t> replace_stride_with_dilation = {})
 {
 	width_per_group = 64 * 2;
-	const std::vector<int64_t> layers{3, 4, 23, 3};
-	std::shared_ptr<ResNet<Bottleneck>> model =
+	const vector<int64_t> layers{3, 4, 23, 3};
+	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
 	return model;

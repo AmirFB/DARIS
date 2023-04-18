@@ -85,12 +85,12 @@ void run(
 		nextTime += interval;
 
 		frame++;
-		// auto now = std::chrono::system_clock::now();
-		// auto us = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
-		// std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+		// auto now = chrono::system_clock::now();
+		// auto us = chrono::duration_cast<chrono::microseconds>(now.time_since_epoch()).count();
+		// time_t now_c = chrono::system_clock::to_time_t(now);
 		// char buffer[80];
-		// std::strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", std::localtime(&now_c));
-		// std::cout << buffer << "." << std::setfill('0') << std::setw(6) << (us % 1000000) << std::endl;
+		// strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", localtime(&now_c));
+		// cout << buffer << "." << setfill('0') << setw(6) << (us % 1000000) << endl;
 
 		// struct timespec ts;
 		// clock_gettime(CLOCK_REALTIME, &ts);
@@ -98,7 +98,7 @@ void run(
 		// struct tm* nowtm = localtime(&nowtime);
 		// char tmbuf[64];
 		// strftime(tmbuf, sizeof(tmbuf), "%Y-%m-%d %H:%M:%S", nowtm);
-		// std::cout << "Current time: " << tmbuf << "." << ts.tv_nsec / 1000 << " microseconds" << std::endl;
+		// cout << "Current time: " << tmbuf << "." << ts.tv_nsec / 1000 << " microseconds" << endl;
 
 		if (type == PROPOSED_SCHEDULER)
 			container->schedule(name, *input, level);

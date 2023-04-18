@@ -47,10 +47,10 @@ struct Bottleneck: public MyContainer
 template <typename Block>
 struct ResNet: public MyContainer
 {
-	ResNet(const std::vector<int64_t> layers, int64_t num_classes = 1000,
+	ResNet(const vector<int64_t> layers, int64_t num_classes = 1000,
 		bool zero_init_residual = false, int64_t groups = 1,
 		int64_t width_per_group = 64,
-		std::vector<int64_t> replace_stride_with_dilation = {});
+		vector<int64_t> replace_stride_with_dilation = {});
 
 	int64_t m_inplanes = 64;
 	int64_t m_dilation = 1;
@@ -94,53 +94,53 @@ struct ResNet: public MyContainer
 };
 
 template <class Block>
-std::shared_ptr<ResNet<Block>>
-_resnet(const std::vector<int64_t>& layers, int64_t num_classes = 1000,
+shared_ptr<ResNet<Block>>
+_resnet(const vector<int64_t>& layers, int64_t num_classes = 1000,
 	bool zero_init_residual = false, int64_t groups = 1,
 	int64_t width_per_group = 64,
-	const std::vector<int64_t>& replace_stride_with_dilation = {});
+	const vector<int64_t>& replace_stride_with_dilation = {});
 
-std::shared_ptr<ResNet<BasicBlock>>
+shared_ptr<ResNet<BasicBlock>>
 resnet18(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {});
+	vector<int64_t> replace_stride_with_dilation = {});
 
-std::shared_ptr<ResNet<BasicBlock>>
+shared_ptr<ResNet<BasicBlock>>
 resnet34(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {});
+	vector<int64_t> replace_stride_with_dilation = {});
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 resnet50(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {});
+	vector<int64_t> replace_stride_with_dilation = {});
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 resnet101(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {});
+	vector<int64_t> replace_stride_with_dilation = {});
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 resnet152(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {});
+	vector<int64_t> replace_stride_with_dilation = {});
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 resnext50_32x4d(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {});
+	vector<int64_t> replace_stride_with_dilation = {});
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 resnext101_32x8d(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {});
+	vector<int64_t> replace_stride_with_dilation = {});
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 wide_resnet50_2(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {});
+	vector<int64_t> replace_stride_with_dilation = {});
 
-std::shared_ptr<ResNet<Bottleneck>>
+shared_ptr<ResNet<Bottleneck>>
 wide_resnet101_2(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
-	std::vector<int64_t> replace_stride_with_dilation = {});
+	vector<int64_t> replace_stride_with_dilation = {});

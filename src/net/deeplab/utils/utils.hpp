@@ -1,11 +1,11 @@
 #ifndef UTIL_H
-#define UTIL_H
+# define UTIL_H
 #undef slots
-#include<torch/script.h>
-#include<torch/torch.h>
-#define slots Q_SLOTS
-#include "readfile.h"
-#include "json.hpp"
+# include<torch/script.h>
+# include<torch/torch.h>
+# define slots Q_SLOTS
+# include "readfile.h"
+# include "json.hpp"
 
 inline torch::nn::Conv2dOptions conv_options(int64_t in_planes, int64_t out_planes, int64_t kerner_size,
 	int64_t stride = 1, int64_t padding = 0, int groups = 1, bool with_bias = true, int dilation = 1)
@@ -19,7 +19,7 @@ inline torch::nn::Conv2dOptions conv_options(int64_t in_planes, int64_t out_plan
 	return conv_options;
 }
 
-inline torch::nn::UpsampleOptions upsample_options(std::vector<double> scale_size, bool align_corners = true)
+inline torch::nn::UpsampleOptions upsample_options(vector<double> scale_size, bool align_corners = true)
 {
 	torch::nn::UpsampleOptions upsample_options = torch::nn::UpsampleOptions();
 	upsample_options.scale_factor(scale_size);
@@ -52,10 +52,10 @@ private:
 	torch::nn::Upsample upsampling{nullptr};
 };TORCH_MODULE(SegmentationHead);
 
-std::string replace_all_distinct(std::string str, const std::string old_value, const std::string new_value);
+string replace_all_distinct(string str, const string old_value, const string new_value);
 
-void load_seg_data_from_folder(std::string folder, std::string image_type,
-	std::vector<std::string>& list_images, std::vector<std::string>& list_labels);
+void load_seg_data_from_folder(string folder, string image_type,
+	vector<string>& list_images, vector<string>& list_labels);
 
 nlohmann::json encoder_params();
 #endif // UTIL_H

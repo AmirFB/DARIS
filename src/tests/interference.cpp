@@ -22,7 +22,7 @@
 # include <schd.hpp>
 
 using namespace std;
-using namespace std::chrono;
+using namespace chrono;
 using namespace torch;
 using namespace torch::nn;
 using namespace FGPRS;

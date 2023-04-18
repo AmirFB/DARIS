@@ -12,7 +12,7 @@
 # include <cmath>
 
 using namespace std;
-using namespace std::chrono;
+using namespace chrono;
 using namespace FGPRS;
 
 double Operation::exceptionThreshold = 0.15;

@@ -18,7 +18,7 @@ using namespace torch::nn;
 using namespace FGPRS;
 
 using namespace std;
-using namespace std::chrono;
+using namespace chrono;
 
 
 void MyContainer::initLoggers(string name)
