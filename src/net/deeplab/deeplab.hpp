@@ -3,6 +3,8 @@
 # include "../backbones/VGG.h"
 # include "DeepLabDecoder.h"
 
+using namespace std;
+
 class DeepLabV3Impl : public torch::nn::Module
 {
 public:
@@ -29,7 +31,7 @@ public:
 	{
 		//delete encoder;
 	}
-	DeepLabV3PlusImpl(int num_classes, string encoder_name = "resnet18", string pretrained_path = "", int encoder_depth = 5,
+	DeepLabV3PlusImpl(int num_classes, string encoder_name = "resnet18", /*string pretrained_path = "", */ int encoder_depth = 5,
 		int encoder_output_stride = 16, int decoder_channels = 256, int in_channels = 3, double upsampling = 4);
 	torch::Tensor forward(torch::Tensor x);
 private:

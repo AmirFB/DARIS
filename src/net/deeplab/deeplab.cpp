@@ -2,7 +2,7 @@
 
 using namespace std;
 
-DeepLabV3Impl::DeepLabV3Impl(int _num_classes, string encoder_name, string pretrained_path, int encoder_depth,
+DeepLabV3Impl::DeepLabV3Impl(int _num_classes, string encoder_name, /*string pretrained_path,*/ int encoder_depth,
 	int decoder_channels, int in_channels, double upsampling)
 {
 	num_classes = _num_classes;
@@ -18,7 +18,7 @@ DeepLabV3Impl::DeepLabV3Impl(int _num_classes, string encoder_name, string pretr
 		encoder = new VGGImpl(encoder_param[encoder_name]["cfg"], 1000, encoder_param[encoder_name]["batch_norm"]);
 	else cout << "unknown error in backbone initialization";
 
-	encoder->load_pretrained(pretrained_path);
+	// encoder->load_pretrained(pretrained_path);
 	encoder->make_dilated({ 5,4 }, { 4,2 });
 
 	decoder = DeepLabV3Decoder(encoder_channels[encoder_channels.size() - 1], decoder_channels);
