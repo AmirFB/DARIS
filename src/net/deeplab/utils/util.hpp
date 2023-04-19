@@ -4,7 +4,7 @@
 # include<torch/script.h>
 # include<torch/torch.h>
 # define slots Q_SLOTS
-# include "readfile.h"
+# include "readfile.hpp"
 # include "json.hpp"
 
 inline torch::nn::Conv2dOptions conv_options(int64_t in_planes, int64_t out_planes, int64_t kerner_size,

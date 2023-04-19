@@ -1,4 +1,4 @@
-# include "util.h"
+# include "util.hpp"
 
 SegmentationHeadImpl::SegmentationHeadImpl(int in_channels, int out_channels, int kernel_size, double _upsampling)
 {

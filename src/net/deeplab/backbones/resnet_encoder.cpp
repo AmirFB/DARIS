@@ -1,4 +1,4 @@
-# include "ResNet.h"
+# include "resnet_encoder.hpp"
 
 BlockImpl::BlockImpl(int64_t inplanes, int64_t planes, int64_t stride_,
 	torch::nn::Sequential downsample_, int groups, int base_width, bool _is_basic)
@@ -65,7 +65,7 @@ torch::Tensor BlockImpl::forward(torch::Tensor x)
 	return x;
 }
 
-ResNetImpl::ResNetImpl(vector<int> layers, int num_classes, string _model_type, int _groups, int _width_per_group)
+ResNetEncoderImpl::ResNetEncoderImpl(vector<int> layers, int num_classes, string _model_type, int _groups, int _width_per_group)
 {
 	model_type = _model_type;
 	if (model_type != "resnet18" && model_type != "resnet34")
@@ -99,7 +99,7 @@ ResNetImpl::ResNetImpl(vector<int> layers, int num_classes, string _model_type, 
 }
 
 
-torch::Tensor  ResNetImpl::forward(torch::Tensor x)
+torch::Tensor  ResNetEncoderImpl::forward(torch::Tensor x)
 {
 	x = conv1->forward(x);
 	x = bn1->forward(x);
@@ -118,7 +118,7 @@ torch::Tensor  ResNetImpl::forward(torch::Tensor x)
 	return torch::log_softmax(x, 1);
 }
 
-vector<torch::nn::Sequential> ResNetImpl::get_stages()
+vector<torch::nn::Sequential> ResNetEncoderImpl::get_stages()
 {
 	vector<torch::nn::Sequential> ans;
 	ans.push_back(this->layer1);
@@ -128,7 +128,7 @@ vector<torch::nn::Sequential> ResNetImpl::get_stages()
 	return ans;
 }
 
-vector<torch::Tensor> ResNetImpl::features(torch::Tensor x, int encoder_depth)
+vector<torch::Tensor> ResNetEncoderImpl::features(torch::Tensor x, int encoder_depth)
 {
 	vector<torch::Tensor> features;
 	features.push_back(x);
@@ -156,7 +156,7 @@ vector<torch::Tensor> ResNetImpl::features(torch::Tensor x, int encoder_depth)
 	return features;
 }
 
-torch::Tensor ResNetImpl::features_at(torch::Tensor x, int stage_num)
+torch::Tensor ResNetEncoderImpl::features_at(torch::Tensor x, int stage_num)
 {
 	assert(stage_num > 0 && "the stage number must in range(1,5)");
 	x = conv1->forward(x);
@@ -176,10 +176,10 @@ torch::Tensor ResNetImpl::features_at(torch::Tensor x, int stage_num)
 	return x;
 }
 
-void ResNetImpl::load_pretrained(string pretrained_path)
+void ResNetEncoderImpl::load_pretrained(string pretrained_path)
 {
 	map<string, vector<int>> name2layers = getParams();
-	ResNet net_pretrained = ResNet(name2layers[model_type], 1000, model_type, groups, base_width);
+	ResNetEncoder net_pretrained = ResNetEncoder(name2layers[model_type], 1000, model_type, groups, base_width);
 	torch::load(net_pretrained, pretrained_path);
 
 	torch::OrderedDict<string, at::Tensor> pretrained_dict = net_pretrained->named_parameters();
@@ -219,7 +219,7 @@ void ResNetImpl::load_pretrained(string pretrained_path)
 	return;
 }
 
-torch::nn::Sequential ResNetImpl::_make_layer(int64_t planes, int64_t blocks, int64_t stride)
+torch::nn::Sequential ResNetEncoderImpl::_make_layer(int64_t planes, int64_t blocks, int64_t stride)
 {
 
 	torch::nn::Sequential downsample;
@@ -241,7 +241,7 @@ torch::nn::Sequential ResNetImpl::_make_layer(int64_t planes, int64_t blocks, in
 	return layers;
 }
 
-void ResNetImpl::make_dilated(vector<int> stage_list, vector<int> dilation_list)
+void ResNetEncoderImpl::make_dilated(vector<int> stage_list, vector<int> dilation_list)
 {
 	if (stage_list.size() != dilation_list.size())
 	{
@@ -270,35 +270,35 @@ void ResNetImpl::make_dilated(vector<int> stage_list, vector<int> dilation_list)
 	return;
 }
 
-ResNet resnet18(int64_t num_classes)
+ResNetEncoder resnet18_encoder(int64_t num_classes)
 {
 	vector<int> layers = { 2, 2, 2, 2 };
-	ResNet model(layers, num_classes, "resnet18");
+	ResNetEncoder model(layers, num_classes, "resnet18");
 	return model;
 }
 
-ResNet resnet34(int64_t num_classes)
+ResNetEncoder resnet34_encoder(int64_t num_classes)
 {
 	vector<int> layers = { 3, 4, 6, 3 };
-	ResNet model(layers, num_classes, "resnet34");
+	ResNetEncoder model(layers, num_classes, "resnet34");
 	return model;
 }
 
-ResNet resnet50(int64_t num_classes)
+ResNetEncoder resnet50_encoder(int64_t num_classes)
 {
 	vector<int> layers = { 3, 4, 6, 3 };
-	ResNet model(layers, num_classes, "resnet50");
+	ResNetEncoder model(layers, num_classes, "resnet50");
 	return model;
 }
 
-ResNet resnet101(int64_t num_classes)
+ResNetEncoder resnet101_encoder(int64_t num_classes)
 {
 	vector<int> layers = { 3, 4, 23, 3 };
-	ResNet model(layers, num_classes, "resnet101");
+	ResNetEncoder model(layers, num_classes, "resnet101");
 	return model;
 }
 
-ResNet pretrained_resnet(int64_t num_classes, string model_name, string weight_path)
+ResNetEncoder pretrained_resnet(int64_t num_classes, string model_name, string weight_path)
 {
 	map<string, vector<int>> name2layers = getParams();
 	int groups = 1;
@@ -311,10 +311,10 @@ ResNet pretrained_resnet(int64_t num_classes, string model_name, string weight_p
 	{
 		groups = 32; width_per_group = 8;
 	}
-	ResNet net_pretrained = ResNet(name2layers[model_name], 1000, model_name, groups, width_per_group);
+	ResNetEncoder net_pretrained = ResNetEncoder(name2layers[model_name], 1000, model_name, groups, width_per_group);
 	torch::load(net_pretrained, weight_path);
 	if (num_classes == 1000) return net_pretrained;
-	ResNet module = ResNet(name2layers[model_name], num_classes, model_name);
+	ResNetEncoder module = ResNetEncoder(name2layers[model_name], num_classes, model_name);
 
 	torch::OrderedDict<string, at::Tensor> pretrained_dict = net_pretrained->named_parameters();
 	torch::OrderedDict<string, at::Tensor> model_dict = module->named_parameters();

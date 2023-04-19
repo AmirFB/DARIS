@@ -1,4 +1,4 @@
-# include "DeepLab.h"
+# include "deeplab.hpp"
 
 using namespace std;
 
@@ -13,7 +13,7 @@ DeepLabV3Impl::DeepLabV3Impl(int _num_classes, string encoder_name, /*string pre
 				resnext50_32x4d, resnext101_32x8d, vgg11, vgg11_bn, vgg13, vgg13_bn, \
 				vgg16, vgg16_bn, vgg19, vgg19_bn,}";
 	if (encoder_param[encoder_name]["class_type"] == "resnet")
-		encoder = new ResNetImpl(encoder_param[encoder_name]["layers"], 1000, encoder_name);
+		encoder = new ResNetEncoderImpl(encoder_param[encoder_name]["layers"], 1000, encoder_name);
 	else if (encoder_param[encoder_name]["class_type"] == "vgg")
 		encoder = new VGGImpl(encoder_param[encoder_name]["cfg"], 1000, encoder_param[encoder_name]["batch_norm"]);
 	else cout << "unknown error in backbone initialization";
@@ -48,7 +48,7 @@ DeepLabV3PlusImpl::DeepLabV3PlusImpl(int _num_classes, string encoder_name, /*st
 				resnext50_32x4d, resnext101_32x8d, vgg11, vgg11_bn, vgg13, vgg13_bn, \
 				vgg16, vgg16_bn, vgg19, vgg19_bn,}";
 	if (encoder_param[encoder_name]["class_type"] == "resnet")
-		encoder = new ResNetImpl(encoder_param[encoder_name]["layers"], 1000, encoder_name);
+		encoder = new ResNetEncoderImpl(encoder_param[encoder_name]["layers"], 1000, encoder_name);
 	else if (encoder_param[encoder_name]["class_type"] == "vgg")
 		encoder = new VGGImpl(encoder_param[encoder_name]["cfg"], 1000, encoder_param[encoder_name]["batch_norm"]);
 	else cout << "unknown error in backbone initialization";

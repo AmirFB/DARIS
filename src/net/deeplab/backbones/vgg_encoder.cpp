@@ -1,4 +1,4 @@
-# include "VGG.h"
+# include "vgg_encoder.hpp"
 
 torch::nn::Sequential make_features(vector<int>& cfg, bool batch_norm)
 {

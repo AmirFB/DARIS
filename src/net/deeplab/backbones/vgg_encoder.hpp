@@ -4,8 +4,8 @@ Copyright(c) AllentDan 2021,
 All rights reserved.
 */
 #pragma once
-# include"../utils/util.h"
-# include"../utils/InterFace.h"
+# include "util.hpp"
+# include "interface.hpp"
 //according to make_features function in torchvisio, return torch::nn::Sequential instance
 torch::nn::Sequential make_features(vector<int>& cfg, bool batch_norm);
 

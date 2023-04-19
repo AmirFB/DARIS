@@ -52,7 +52,7 @@ Conv2dOptions create_conv1x1_options(int64_t in_planes,
 	return conv_options;
 }
 
-struct BasicBlock: public MyContainer
+struct BasicBlock : public MyContainer
 {
 	BasicBlock(int64_t inplanes, int64_t planes, int64_t stride = 1,
 		MySequential downsample = MySequential(),
@@ -77,7 +77,7 @@ struct BasicBlock: public MyContainer
 		m_conv2 = register_module(
 			"conv2", Conv2d{ create_conv3x3_options(planes, planes) });
 		m_bn2 = register_module("bn2", BatchNorm2d{ planes });
-		if (!downsample->is_empty())
+		if (!downsample.is_empty())
 		{
 			m_downsample = register_module("downsample", downsample);
 		}
@@ -253,7 +253,7 @@ struct BasicBlock: public MyContainer
 	}
 };
 
-struct Bottleneck: public MyContainer
+struct Bottleneck : public MyContainer
 {
 	Bottleneck(int64_t inplanes, int64_t planes, int64_t stride = 1,
 		MySequential downsample = MySequential(),
@@ -408,7 +408,7 @@ struct Bottleneck: public MyContainer
 	}
 };
 
-class XSequential: public Module
+class XSequential : public Module
 {
 	AdaptiveAvgPool2d _avgpool{ nullptr };
 	Linear _fc{ nullptr };
@@ -443,8 +443,8 @@ public:
 	}
 };
 
-template <typename Block, typename = enable_if_t<is_base_of<MyContainer, Block>::value>>
-struct ResNet: public MyContainer
+template <typename Block, typename = std::enable_if_t<is_base_of<MyContainer, Block>::value>>
+struct ResNet : public MyContainer
 {
 	ResNet(const vector<int64_t> layers, int64_t num_classes = 1000,
 		bool zero_init_residual = false, int64_t groups = 1,

@@ -4,7 +4,7 @@
 # include <functional>
 # include <algorithm>
 #ifdef _WIN32
-# include "_dirent.h"
+# include "_dirent.hpp"
 #else 
 # include <dirent.h>
 #endif
@@ -12,6 +12,8 @@
 
 #ifndef READ_FILE_READFILE_H
 # define READ_FILE_READFILE_H
+
+using namespace std;
 
 //# define throw_if(expression) if(expression)throw "error"
 // 判断是否是文件夹

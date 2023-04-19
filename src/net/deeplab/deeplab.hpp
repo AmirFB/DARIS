@@ -1,11 +1,15 @@
 # pragma once
-# include "../backbones/ResNet.h"
-# include "../backbones/VGG.h"
-# include "DeepLabDecoder.h"
+# include "resnet_encoder.hpp"
+# include "vgg_encoder.hpp"
+# include "deeplab_decoder.hpp"
+
+# include <cnt.hpp>
 
 using namespace std;
 
-class DeepLabV3Impl : public torch::nn::Module
+using namespace FGPRS;
+
+class DeepLabV3Impl : public MyContainer
 {
 public:
 	DeepLabV3Impl() {}
@@ -23,7 +27,7 @@ private:
 	int num_classes = 1;
 }; TORCH_MODULE(DeepLabV3);
 
-class DeepLabV3PlusImpl : public torch::nn::Module
+class DeepLabV3PlusImpl : public MyContainer
 {
 public:
 	DeepLabV3PlusImpl() {};

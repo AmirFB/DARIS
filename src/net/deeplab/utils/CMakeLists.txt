@@ -1,1 +1,1 @@
-target_sources(fgprs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utils.cpp)
+target_sources(fgprs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/util.cpp)
