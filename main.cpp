@@ -35,6 +35,7 @@
 # include <unistd.h>
 # include <sys/time.h>
 # include <sched.h>
+# include <deeplab.hpp>
 
 # include <c10/cuda/CUDACachingAllocator.h>
 
@@ -45,7 +46,8 @@ using namespace torch;
 using namespace torch::nn;
 using namespace FGPRS;
 
-# define MODULES_COUNT 35
+# define MODULES_COUNT	12
+# define FREQUENCY			55
 # define REPEAT 1
 
 shared_ptr<logger> logger;
@@ -106,7 +108,9 @@ int main(int argc, char** argv)
 	Scheduler::initialize(smOptions, smCount, type);
 
 	Tensor inputs[MODULES_COUNT];
-	shared_ptr<ResNet<BasicBlock>> mods[MODULES_COUNT];
+	shared_ptr<MyContainer> mods[MODULES_COUNT];
+	// shared_ptr<ResNet<BasicBlock>> mods[MODULES_COUNT];
+	// shared_ptr<DeepLabV3Plus> mods[MODULES_COUNT];
 	Loop loops[MODULES_COUNT];
 
 	for (int i = 0; i < MODULES_COUNT; i++)
@@ -114,8 +118,9 @@ int main(int argc, char** argv)
 		string name = "res";
 
 		inputs[i] = torch::randn({ 1, 3, 224, 224 }, kCUDA);
-		mods[i] = resnet18(1000);
-		loops[i] = Loop(name + to_string(i + 1), mods[i], 20, i);
+		// mods[i] = resnet18(1000);
+		mods[i] = make_shared<DeepLabV3PlusImpl>(DeepLabV3PlusImpl(100, "resnet18"));
+		loops[i] = Loop(name + to_string(i + 1), mods[i], FREQUENCY, i);
 		loops[i].initialize(3, inputs[i], type, level);
 	}
 
@@ -125,7 +130,7 @@ int main(int argc, char** argv)
 	this_thread::sleep_for(milliseconds(250));
 
 	for (int i = 0; i < MODULES_COUNT; i++)
-		loops[i].stop();
+		loops[i].wait();
 
 	cout << endl << endl << endl << endl << endl;
 
@@ -143,6 +148,9 @@ int main(int argc, char** argv)
 
 		for (int i = 0; i < MODULES_COUNT; i++)
 			loops[i].stop();
+
+		for (int i = 0; i < MODULES_COUNT; i++)
+			loops[i].wait();
 
 		cout << endl << endl << endl << endl << endl;
 	}

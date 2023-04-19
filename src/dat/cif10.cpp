@@ -14,11 +14,13 @@
 
 # include <cif10.hpp>
 
+using namespace std;
+
 const vector<string> train_set_file_names{
 	"data_batch_1.bin", "data_batch_2.bin", "data_batch_3.bin",
 		"data_batch_4.bin", "data_batch_5.bin"};
 const vector<string> test_set_file_names{"test_batch.bin"};
-const string meta_data_file_name{"batches.meta.txt"};
+const string meta_data_file_name{ "batches.meta.txt" };
 
 constexpr const uint32_t num_samples_per_file{ 10000 };
 constexpr const uint32_t image_height{ 32 };
