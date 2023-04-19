@@ -26,6 +26,7 @@ namespace FGPRS
 		void initialize(int deadlineContextIndex, Tensor dummyInput, SchedulerType type, int level);
 		void start(Tensor* input, SchedulerType type, int level = 0);
 		void stop();
+		void wait();
 	};
 }
 

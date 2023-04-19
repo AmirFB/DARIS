@@ -142,5 +142,10 @@ void Loop::start(Tensor* input, SchedulerType type, int level)
 void Loop::stop()
 {
 	_stop = true;
+}
+
+void Loop::wait()
+{
+	_stop = true;
 	_th.join();
 }
