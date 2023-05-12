@@ -81,7 +81,36 @@ void MyContainer::copyOperations(string parentName, MyContainer& container, int 
 	}
 }
 
-Tensor MyContainer::schedule(string name, Tensor input, int level)
+void MyContainer::copyOperations(string parentName, MyContainer* container, int level)
+{
+	auto dummy = container->getOperations(1);
+
+	for (auto op : container->getOperations(1))
+	{
+		op->setParentName(parentName);
+		operations[0].push_back(op);
+	}
+
+	if (level != 2)
+	{
+		for (auto op : container->getOperations(2))
+		{
+			op->setParentName(parentName);
+			operations[1].push_back(op);
+		}
+	}
+
+	if (level == 1)
+	{
+		for (auto op : container->getOperations(3))
+		{
+			op->setParentName(parentName);
+			operations[2].push_back(op);
+		}
+	}
+}
+
+Tensor MyContainer::schedule(Tensor input, int level)
 {
 	for (auto op : operations[level - 1])
 		input = op->scheduleSync(input);

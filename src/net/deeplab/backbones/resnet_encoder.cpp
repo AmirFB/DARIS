@@ -156,6 +156,11 @@ vector<torch::Tensor> ResNetEncoderImpl::features(torch::Tensor x, int encoder_d
 	return features;
 }
 
+vector<Tensor> ResNetEncoderImpl::forwardSIMO(Tensor input)
+{
+	return features(input);
+}
+
 torch::Tensor ResNetEncoderImpl::features_at(torch::Tensor x, int stage_num)
 {
 	assert(stage_num > 0 && "the stage number must in range(1,5)");

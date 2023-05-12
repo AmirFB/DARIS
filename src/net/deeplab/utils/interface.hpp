@@ -1,8 +1,12 @@
-#pragma once
+# pragma once
 # include<torch/torch.h>
 # include<torch/script.h>
 
-class Backbone : public torch::nn::Module
+# include <cnt.hpp>
+
+using namespace FGPRS;
+
+class Backbone : public MyContainer
 {
 public:
 	virtual vector<torch::Tensor> features(torch::Tensor x, int encoder_depth = 5) = 0;

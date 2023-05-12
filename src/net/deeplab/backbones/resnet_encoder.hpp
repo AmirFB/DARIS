@@ -3,7 +3,7 @@ This libtorch implementation is writen by AllentDan.
 Copyright(c) AllentDan 2021,
 All rights reserved.
 */
-#ifndef RESNET_H
+# ifndef RESNET_H
 # define RESNET_H
 # include "util.hpp"
 # include "interface.hpp"
@@ -41,6 +41,7 @@ public:
 	vector<torch::nn::Sequential> get_stages();
 
 	vector<torch::Tensor> features(torch::Tensor x, int encoder_depth = 5) override;
+	vector<Tensor> forwardSIMO(torch::Tensor input) override;
 	torch::Tensor features_at(torch::Tensor x, int stage_num) override;
 	void make_dilated(vector<int> stage_list, vector<int> dilation_list) override;
 	void load_pretrained(string pretrained_path) override;

@@ -23,14 +23,14 @@ public:
 private:
 	Backbone* encoder;
 	DeepLabV3Decoder decoder{ nullptr };
-	SegmentationHead segmentation_head{ nullptr };
+	SegmentationHead head{ nullptr };
 	int num_classes = 1;
 }; TORCH_MODULE(DeepLabV3);
 
 class DeepLabV3PlusImpl : public MyContainer
 {
 public:
-	DeepLabV3PlusImpl() {};
+	DeepLabV3PlusImpl() {}
 	~DeepLabV3PlusImpl()
 	{
 		//delete encoder;
@@ -40,8 +40,19 @@ public:
 	torch::Tensor forward(torch::Tensor x);
 private:
 	Backbone* encoder;
-	DeepLabV3PlusDecoder decoder{ nullptr };
-	SegmentationHead segmentation_head{ nullptr };
+	shared_ptr<Backbone> m_encoder;
+	DeepLabV3PlusDecoder m_decoder{ nullptr };
+	SegmentationHead m_head{ nullptr };
+	shared_ptr<Operation> o_encoder, o_decoder, o_head;
+
 	int num_classes = 1;
 	vector<int> decoder_atrous_rates = { 12, 24, 36 };
+
+public:
+	void assignOperations() override;
+	Tensor schedule(Tensor input, int level) override;
+	Tensor analyze(int warmup, int repeat, Tensor input, int level) override;
+	double assignExecutionTime(int level, int contextIndex, double executionTimeStack) override;
+	double assignDeadline(double quota, int level, int contextIndex, double deadlineStack) override;
+	void setAbsoluteDeadline(int level, steady_clock::time_point start) override;
 }; TORCH_MODULE(DeepLabV3Plus);

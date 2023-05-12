@@ -46,9 +46,9 @@ using namespace torch;
 using namespace torch::nn;
 using namespace FGPRS;
 
-# define MODULES_COUNT	12
-# define FREQUENCY			55
-# define REPEAT 1
+# define MODULES_COUNT	5
+# define FREQUENCY			60
+# define REPEAT 				1
 
 shared_ptr<logger> logger;
 
@@ -64,6 +64,8 @@ int main(int argc, char** argv)
 	SchedulerType type;
 	int* smOptions;
 	int smCount;
+
+	cout << "Initializing scheduler ..." << endl;
 
 	if (!strcmp(argv[1], "proposed"))
 	{
@@ -95,7 +97,7 @@ int main(int argc, char** argv)
 		type = PMPSO_SCHEDULER;
 		smCount = MODULES_COUNT;
 		smOptions = new int[smCount];
-		distributeSMs(smOptions, 68 * (smCount / 2 + 0.5), smCount);
+		distributeSMs(smOptions, max(68 * (smCount / 2 + 0.5), 68.0), smCount);
 	}
 
 	else if (!strcmp(argv[1], "nomps"))
@@ -113,16 +115,25 @@ int main(int argc, char** argv)
 	// shared_ptr<DeepLabV3Plus> mods[MODULES_COUNT];
 	Loop loops[MODULES_COUNT];
 
+	cout << "Initializing modules ..." << endl;
+
 	for (int i = 0; i < MODULES_COUNT; i++)
 	{
 		string name = "res";
-
+		cout << "\t" << name << (i + 1) << endl;
 		inputs[i] = torch::randn({ 1, 3, 224, 224 }, kCUDA);
 		// mods[i] = resnet18(1000);
 		mods[i] = make_shared<DeepLabV3PlusImpl>(DeepLabV3PlusImpl(100, "resnet18"));
 		loops[i] = Loop(name + to_string(i + 1), mods[i], FREQUENCY, i);
 		loops[i].initialize(3, inputs[i], type, level);
 	}
+
+	// inputs[0] = torch::randn({ 1, 3, 1024, 1024 }, kCUDA);
+	// mods[0] = resnet18(1000);
+	// Loops[0] = Loop("res1", mods[0], 30, 0);
+	// Loops[0].initialize(3, inputs[0], type, level);
+
+	cout << "Warming up ..." << endl;
 
 	for (int i = 0; i < MODULES_COUNT; i++)
 		loops[i].start(&inputs[i], type, level);
@@ -134,7 +145,7 @@ int main(int argc, char** argv)
 
 	cout << endl << endl << endl << endl << endl;
 
-	system("clear");
+	// system("clear");
 	cout << "Here we go ...\n";
 
 	logger->info("Started!");

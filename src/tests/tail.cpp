@@ -9,7 +9,6 @@
 
 # include <torch/torch.h>
 # include <torch/script.h>
-# include <c10/cuda/CUDAStream.h>
 # include <ATen/cuda/CUDAContext.h>
 # include <c10/cuda/CUDACachingAllocator.h>
 

@@ -12,15 +12,21 @@
 # include <cudaTypedefs.h>
 # include <cuda_runtime.h>
 
+# include <torch/torch.h>
+
 using namespace FGPRS;
 
 using namespace std;
+
+using namespace torch;
+using namespace torch::nn;
 
 int Scheduler::maxSmCount;
 bool Scheduler::_stopDummy;
 vector<int> Scheduler::smOptions;
 MyContext* Scheduler::_contextPool;
-MyContext Scheduler::_defaultContext;
+MyContext* Scheduler::_defaultContext;
+SchedulerType Scheduler::type;
 
 Sequential* Scheduler::_dummyModule;
 Tensor* Scheduler::_dummyInput;
@@ -29,19 +35,17 @@ bool Scheduler::initialize(int options[], int size, SchedulerType type)
 {
 	bool result = true;
 	cudaDeviceProp prop;
+	Scheduler::type = type;
 
 	cudaGetDeviceProperties(&prop, 0);
 	maxSmCount = prop.multiProcessorCount;
 
-	_defaultContext = MyContext(maxSmCount, -1, true);
-	_contextPool = new MyContext[size];
-
-	_dummyModule = new Sequential[size - 1];
-	_dummyInput = new Tensor[size - 1];
-
 	if (type == PROPOSED_SCHEDULER)
 	{
-		for (int i = 0; i < (size - 1); i++)
+		_dummyModule = new Sequential[size];
+		_dummyInput = new Tensor[size];
+
+		for (int i = 0; i < size; i++)
 		{
 			_dummyInput[i] = torch::randn({ 1, 16, 224, 224 }, kCUDA);
 			_dummyModule[i] = Sequential(
@@ -54,17 +58,35 @@ bool Scheduler::initialize(int options[], int size, SchedulerType type)
 			_dummyModule[i]->eval();
 			_dummyModule[i]->to(kCUDA);
 		}
+
+		_contextPool = new MyContext[size + 1];
+		smOptions = vector<int>(size + 1);
+
+		smOptions[size] = maxSmCount;
+		_contextPool[size] = MyContext(maxSmCount, size, true);
+		_defaultContext = &_contextPool[size];
+		result &= _contextPool[size].initialize();
+		auto dummy = c10::cuda::getStreamFromPool(false, _contextPool[size].index);
 	}
+
+	else
+	{
+		smOptions = vector<int>(size);
+		_contextPool = new MyContext[size];
+	}
+
 
 	for (int i = 0; i < size; i++)
 	{
-		smOptions.push_back(max(options[i], 1));
+		smOptions[i] = (min(max(options[i], 1), maxSmCount));
 		_contextPool[i] = MyContext(options[i], i);
 		result &= _contextPool[i].initialize();
+
+		if (type == PROPOSED_SCHEDULER)
+			auto dummy = c10::cuda::getStreamFromPool(false, _contextPool[i].index);
 	}
 
-	selectDefaultContext();
-
+	// smOptions.pop_back();
 	return result;
 }
 
@@ -78,7 +100,7 @@ MyContext* Scheduler::selectContext(int smCount)
 		if (!_contextPool[i].busy)
 			return &_contextPool[i];
 
-	return &_defaultContext;
+	return _defaultContext;
 }
 
 MyContext* Scheduler::selectContextByIndex(int index)
@@ -88,7 +110,7 @@ MyContext* Scheduler::selectContextByIndex(int index)
 
 MyContext* Scheduler::selectDefaultContext()
 {
-	return &_defaultContext;
+	return &_contextPool[smOptions.size() - 1];
 }
 
 bool Scheduler::releaseContext(MyContext context)
@@ -154,7 +176,7 @@ void Scheduler::startDummy(MyContext* ctx)
 		if (_contextPool[i].index == ctx->index)
 			continue;
 
-		Scheduler::selectDefaultContext();
+		MyContext::selectDefault();
 		auto dummy = _dummyModule[index]->forward(_dummyInput[index]);
 
 		_contextPool[i].select();
@@ -184,33 +206,28 @@ MyContext* Scheduler::getMinimalContext(Operation* operation)
 	steady_clock::time_point earliest1 = steady_clock::now() + seconds(1), earliest2 = steady_clock::now() + seconds(1);
 	steady_clock::time_point temp;
 
-	for (int i = 0; i < smOptions.size(); i++)
+	int max = smOptions.size() - 1;
+
+	for (int i = 0; i < max; i++)
 	{
 		if (!_contextPool[i].isEmpty())
 			continue;
-
 		temp = _contextPool[i].getFinishTime() + microseconds((int)operation->contextData[i].occupiedExecutionTime);
 
 		if (temp < operation->absoluteDeadline)
 		{
 			_contextPool[i].queueOperation(operation);
-			_contextPool[i].lock();
+			// operation->finishTime = _contextPool[i].getFinishTime();
 			globalMutex.unlock();
+			_contextPool[i].lock();
+
 			return &_contextPool[i];
 		}
 	}
 
-	for (int i = 0; i < smOptions.size(); i++)
+	for (int i = 0; i < max; i++)
 	{
 		temp = _contextPool[i].getFinishTime() + microseconds((int)operation->contextData[i].occupiedExecutionTime);
-
-		if (temp < operation->absoluteDeadline)
-		{
-			_contextPool[i].queueOperation(operation);
-			_contextPool[i].lock();
-			globalMutex.unlock();
-			return &_contextPool[i];
-		}
 
 		if (_contextPool[i].isEmpty() && temp < earliest1)
 		{
@@ -225,14 +242,13 @@ MyContext* Scheduler::getMinimalContext(Operation* operation)
 		}
 	}
 
-	// cout << "Zorake!\n";
-
 	if (ctx1 != NULL)
 	{
 		ctx1->queueOperation(operation);
+		// operation->finishTime = ctx1->getFinishTime();
+		globalMutex.unlock();
 		ctx1->lock();
 
-		globalMutex.unlock();
 		return ctx1;
 	}
 
@@ -240,6 +256,7 @@ MyContext* Scheduler::getMinimalContext(Operation* operation)
 	else
 	{
 		ctx2->queueOperation(operation);
+		// operation->finishTime = ctx2->getFinishTime();
 		globalMutex.unlock();
 		ctx2->lock();
 

@@ -31,19 +31,21 @@ void Loop::initialize(int deadlineContextIndex, Tensor dummyInput, SchedulerType
 
 	for (int i = 0; i < 10; i++)
 	{
-		Scheduler::selectDefaultContext();
-		_container->forward(dummyInput);
-
-		for (int j = 0; j < Scheduler::smOptions.size(); j++)
+		for (int j = Scheduler::smOptions.size() - 1; j >= 0; j--)
 		{
 			auto ctx = Scheduler::selectContextByIndex(j);
 			ctx->select();
+
+			if (type == PROPOSED_SCHEDULER)
+			{
+				auto stream = at::cuda::getStreamFromPool(false, ctx->index);
+				at::cuda::setCurrentCUDAStream(stream);
+			}
+
 			_container->forward(dummyInput);
 			ctx->release();
 		}
 	}
-
-	Scheduler::selectDefaultContext();
 
 	_container->assignOperations();
 
@@ -66,7 +68,7 @@ void run(
 	container->clearScheduleLogger(name);
 
 	if (type == PROPOSED_SCHEDULER)
-		container->assignDeadline(period / 1000 * 0.8, level, 3, 0);
+		container->assignDeadline(period / 1000 * 0.80, level, 3, 0);
 
 	else if (type == MPS_SCHEDULER || type == PMPS_SCHEDULER || type == PMPSO_SCHEDULER)
 	{
@@ -77,59 +79,50 @@ void run(
 	startTime = steady_clock::now();
 	nextTime = startTime;
 
+	container->meets = 0;
+	container->missed = 0;
+
 	while (!*stop)
 	{
 		if (type == PROPOSED_SCHEDULER)
 			container->setAbsoluteDeadline(level, nextTime);
 
 		nextTime += interval;
-
 		frame++;
-		// auto now = chrono::system_clock::now();
-		// auto us = chrono::duration_cast<chrono::microseconds>(now.time_since_epoch()).count();
-		// time_t now_c = chrono::system_clock::to_time_t(now);
-		// char buffer[80];
-		// strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", localtime(&now_c));
-		// cout << buffer << "." << setfill('0') << setw(6) << (us % 1000000) << endl;
-
-		// struct timespec ts;
-		// clock_gettime(CLOCK_REALTIME, &ts);
-		// time_t nowtime = ts.tv_sec;
-		// struct tm* nowtm = localtime(&nowtime);
-		// char tmbuf[64];
-		// strftime(tmbuf, sizeof(tmbuf), "%Y-%m-%d %H:%M:%S", nowtm);
-		// cout << "Current time: " << tmbuf << "." << ts.tv_nsec / 1000 << " microseconds" << endl;
 
 		if (type == PROPOSED_SCHEDULER)
-			container->schedule(name, *input, level);
+			container->schedule(*input, level);
 
 		else
 			container->forward(*input);
 
 		if (steady_clock::now() > nextTime)
 		{
-			// cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
-			// cout << "Deadline missed: " << frame << "th " << name << endl;
-
-			// if (steady_clock::now() > (nextTime + interval / 10))
-			// 	cout << name << "->Delayed: " << duration_cast<microseconds>(steady_clock::now() - nextTime).count() << "us" << endl;
-
-			// else
-			// 	cout << name << "->Bevakhed: " << duration_cast<microseconds>(steady_clock::now() - nextTime).count() << "us" << endl;
 			container->scheduleLogger->info("Delayed : {}us", duration_cast<microseconds>(steady_clock::now() - nextTime).count());
 
-			// if ((nextTime + interval) < steady_clock::now())
-			// 	printf("OHA!!!\n");
+			while (steady_clock::now() > (nextTime + interval))
+			{
+				nextTime += interval;
+			}
 
-			continue;
+			container->missed++;
 		}
 
-		// cout << "          Time: " << ((duration_cast<microseconds>(steady_clock::now().time_since_epoch())).count() % 1000000) << endl;
-		// cout << "Reserved: " << frame << "th " << name << " " << duration_cast<microseconds>(nextTime - steady_clock::now()).count() << "us" << endl;
-		container->scheduleLogger->info("Reserved: {}us", duration_cast<microseconds>(nextTime - steady_clock::now()).count());
+		else
+		{
+			container->scheduleLogger->info("Reserved: {}us", duration_cast<microseconds>(nextTime - steady_clock::now()).count());
+			container->meets++;
+		}
 
 		this_thread::sleep_until(nextTime);
 	}
+
+	string temp = name + "\n\tCompleted: " + to_string((container->meets + container->missed) * period / 1000000000.0 * 100) + "%"
+		+ "\tMissed   : " + to_string((1 - container->meets * period / 1000000000.0) * 100) + "%";
+	cout << temp << endl;
+	// cout << name << endl
+	// 	<< "\tCompleted: " << ((container->meets + container->missed) * period / 1000000000 * 100) << "%"
+	// 	<< "\tMissed   : " << (1 - container->meets * period / 1000000000) * 100 << "%" << endl;
 }
 
 void Loop::start(Tensor* input, SchedulerType type, int level)

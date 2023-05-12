@@ -24,10 +24,11 @@ namespace FGPRS
 		static int maxSmCount;
 		static vector<int> smOptions;
 		static bool _stopDummy;
+		static SchedulerType type;
 
 	private:
 		static MyContext* _contextPool;
-		static MyContext _defaultContext;
+		static MyContext* _defaultContext;
 		static Sequential* _dummyModule;
 		static Tensor* _dummyInput;
 		static future<void>* _th;

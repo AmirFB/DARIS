@@ -13,5 +13,6 @@ export CFLAGS="-I$CUDA_HOME/include $CFLAGS"
 
 # export LDFLAGS="-libc++=libstdc++"
 # export CXXFLAGS="-lstdc++fs -std=c++20"
-cmake -DCMAKE_PREFIX_PATH=/home/amir/repos/FGPRS/libtorch-install/ ..
+export TORCH_USE_CUDA_DSA=ON
+cmake -DCMAKE_PREFIX_PATH=/home/amir/repos/FGPRS/libtorch-install/ -DTORCH_USE_CUDA_DSA=ON ..
 cmake --build . --config Release -j32

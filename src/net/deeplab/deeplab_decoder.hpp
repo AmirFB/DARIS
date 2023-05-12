@@ -29,9 +29,19 @@ public:
 	ASPPImpl(int in_channels, int out_channels, vector<int> atrous_rates, bool separable = false);
 	torch::Tensor forward(torch::Tensor x);
 private:
-	vector<MySequential> modules;
-	ASPPPooling aspppooling{ nullptr };
-	MySequential project{ nullptr };
+	vector<MySequential> m_modules;
+	ASPPPooling m_aspppooling{ nullptr };
+	MySequential m_project{ nullptr };
+
+	vector<shared_ptr<Operation>> o_modules;
+	shared_ptr<Operation> o_aspppooling, o_project, temp;
+public:
+	void assignOperations(MyContainer* owner) override;
+	Tensor schedule(Tensor input, int leve) override;
+	Tensor analyze(int warmup, int repeat, Tensor input, int level) override;
+	double assignExecutionTime(int level, int contextIndex, double executionTimeStack) override;
+	double assignDeadline(double quota, int level, int contextIndex, double deadlineStack) override;
+	void setAbsoluteDeadline(int level, steady_clock::time_point start) override;
 }; TORCH_MODULE(ASPP);
 
 class DeepLabV3DecoderImpl : public MyContainer
@@ -44,16 +54,26 @@ private:
 	MySequential seq{};
 }; TORCH_MODULE(DeepLabV3Decoder);
 
-class DeepLabV3PlusDecoderImpl :public MyContainer
+class DeepLabV3PlusDecoderImpl : public MyContainer
 {
 public:
 	DeepLabV3PlusDecoderImpl(vector<int> encoder_channels, int out_channels,
 		vector<int> atrous_rates, int output_stride = 16);
 	torch::Tensor forward(vector< torch::Tensor> x);
 private:
-	ASPP aspp{ nullptr };
-	MySequential aspp_seq{ nullptr };
-	Upsample up{ nullptr };
-	MySequential block1{ nullptr };
-	MySequential block2{ nullptr };
+	ASPP m_aspp{ nullptr };
+	MySequential m_aspp_seq{ nullptr };
+	Upsample m_up{ nullptr };
+	MySequential m_block1{ nullptr };
+	MySequential m_block2{ nullptr };
+
+	shared_ptr<Operation> o_aspp, o_aspp_seq, o_up, o_block1, o_block2;
+
+public:
+	void assignOperations(MyContainer* owner) override;
+	Tensor scheduleMISO(vector<Tensor> inputs, int leve);
+	Tensor analyzeMISO(int warmup, int repeat, vector<Tensor> inputs, int level);
+	double assignExecutionTime(int level, int contextIndex, double executionTimeStack) override;
+	double assignDeadline(double quota, int level, int contextIndex, double deadlineStack) override;
+	void setAbsoluteDeadline(int level, steady_clock::time_point start) override;
 }; TORCH_MODULE(DeepLabV3PlusDecoder);

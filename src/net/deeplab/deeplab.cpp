@@ -1,6 +1,10 @@
 # include "deeplab.hpp"
 
+# include <cnt.hpp>
+# include <schd.hpp>
+
 using namespace std;
+using namespace FGPRS;
 
 DeepLabV3Impl::DeepLabV3Impl(int _num_classes, string encoder_name, /*string pretrained_path,*/ int encoder_depth,
 	int decoder_channels, int in_channels, double upsampling)
@@ -22,18 +26,18 @@ DeepLabV3Impl::DeepLabV3Impl(int _num_classes, string encoder_name, /*string pre
 	encoder->make_dilated({ 5,4 }, { 4,2 });
 
 	decoder = DeepLabV3Decoder(encoder_channels[encoder_channels.size() - 1], decoder_channels);
-	segmentation_head = SegmentationHead(decoder_channels, num_classes, 1, upsampling);
+	head = SegmentationHead(decoder_channels, num_classes, 1, upsampling);
 
 	register_module("encoder", shared_ptr<Backbone>(encoder));
 	register_module("decoder", decoder);
-	register_module("segmentation_head", segmentation_head);
+	register_module("head", head);
 }
 
 torch::Tensor DeepLabV3Impl::forward(torch::Tensor x)
 {
 	vector<torch::Tensor> features = encoder->features(x);
 	x = decoder->forward(features);
-	x = segmentation_head->forward(x);
+	x = head->forward(x);
 	return x;
 }
 
@@ -67,18 +71,125 @@ DeepLabV3PlusImpl::DeepLabV3PlusImpl(int _num_classes, string encoder_name, /*st
 		cout << "Encoder output stride should be 8 or 16";
 	}
 
-	decoder = DeepLabV3PlusDecoder(encoder_channels, decoder_channels, decoder_atrous_rates, encoder_output_stride);
-	segmentation_head = SegmentationHead(decoder_channels, num_classes, 1, upsampling);
+	// m_decoder = DeepLabV3PlusDecoder(encoder_channels, decoder_channels, decoder_atrous_rates, encoder_output_stride);
+	// m_head = SegmentationHead(decoder_channels, num_classes, 1, upsampling);
 
-	register_module("encoder", shared_ptr<Backbone>(encoder));
-	register_module("decoder", decoder);
-	register_module("segmentation_head", segmentation_head);
+	// m_encoder = *register_module("encoder", shared_ptr<Backbone>(encoder));
+	// register_module("encoder", shared_ptr<Backbone>(encoder));
+	m_encoder = register_module("encoder", shared_ptr<Backbone>(encoder));
+	m_decoder = register_module("decoder", DeepLabV3PlusDecoder(encoder_channels, decoder_channels, decoder_atrous_rates, encoder_output_stride));
+	m_head = register_module("head", SegmentationHead(decoder_channels, num_classes, 1, upsampling));
 }
 
 torch::Tensor DeepLabV3PlusImpl::forward(torch::Tensor x)
 {
-	vector<torch::Tensor> features = encoder->features(x);
-	x = decoder->forward(features);
-	x = segmentation_head->forward(x);
+	vector<torch::Tensor> features = m_encoder->features(x);
+	x = m_decoder->forward(features);
+	x = m_head->forward(x);
 	return x;
+}
+
+void DeepLabV3PlusImpl::assignOperations()
+{
+	o_encoder = addOperationSIMO(this, "encoder", m_encoder, 0);
+
+	m_decoder->assignOperations(this);
+	// copyOperations("decoder", (MyContainer*)&m_decoder);
+	// o_decoder = addOperationSIMO(this, "decoder", m_decoder.ptr(), 3);
+
+	o_head = addOperation(this, "head", m_head.ptr(), 0, true);
+}
+
+Tensor DeepLabV3PlusImpl::schedule(Tensor input, int level)
+{
+	auto features = o_encoder->scheduleSIMOSync(input);
+
+	// if (level == 3)
+	// 	input = o_decoder->scheduleSync(features);
+
+	// else
+	input = m_decoder->scheduleMISO(features, level);
+	return o_head->scheduleSync(input);
+}
+
+Tensor DeepLabV3PlusImpl::analyze(int warmup, int repeat, Tensor input, int level)
+{
+	auto features = o_encoder->analyzeSIMO(warmup, repeat, input);
+
+	// if (level == 3)
+	// 	input = o_decoder->analyze(warmup, repeat, input);
+
+	// else
+	input = m_decoder->analyzeMISO(warmup, repeat, features, level);
+	input = o_head->analyze(warmup, repeat, input);
+
+	return input;
+}
+
+double DeepLabV3PlusImpl::assignExecutionTime(int level, int contextIndex, double executionTimeStack)
+{
+	double tempStack = 0;
+
+	level -= 1;
+
+	contextData[level].resize(Scheduler::smOptions.size());
+
+	for (int i = 0; i < Scheduler::smOptions.size(); i++)
+	{
+		contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
+		contextData[level][i].stackExecutionTime(o_encoder->contextData[i]);
+	}
+
+	tempStack += o_encoder->getRegulatedExecutionTime(contextIndex);
+
+	tempStack += m_decoder->assignExecutionTime(level + 1, contextIndex, 0);
+
+	for (int i = 0; i < Scheduler::smOptions.size(); i++)
+		contextData[level][i].stackExecutionTime(o_head->contextData[i]);
+
+	tempStack += o_head->getRegulatedExecutionTime(contextIndex);
+
+	regulatedExecutionTime[level] = tempStack;
+	return executionTimeStack + tempStack;
+}
+
+double DeepLabV3PlusImpl::assignDeadline(double quota, int level, int contextIndex, double deadlineStack)
+{
+	double usedDeadline = 0, tempStack, tempDeadline;
+
+	level -= 1;
+	deadlineLogger->info("encoder reg-: {:.0f}", o_encoder->getRegulatedExecutionTime(contextIndex));
+	o_encoder->relativeDeadline[level] =
+		o_encoder->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
+	usedDeadline += o_encoder->relativeDeadline[level];
+	deadlineStack += o_encoder->relativeDeadline[level];
+	o_encoder->stackedDeadline[level] = deadlineStack;
+
+	deadlineLogger->info("encoder-: {:.0f}", o_encoder->relativeDeadline[level]);
+
+	tempStack = m_decoder->assignDeadline(
+		(m_decoder->regulatedExecutionTime[level] / regulatedExecutionTime[level]) * quota,
+		level + 1, contextIndex, deadlineStack);
+	tempDeadline = tempStack - deadlineStack;
+	usedDeadline += tempDeadline;
+	deadlineStack += tempDeadline;
+
+	deadlineLogger->info("decoder-: {:.0f}", tempDeadline);
+
+	o_head->relativeDeadline[level] =
+		o_head->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
+	usedDeadline += o_head->relativeDeadline[level];
+	deadlineStack += o_head->relativeDeadline[level];
+	o_head->stackedDeadline[level] = deadlineStack;
+
+	deadlineLogger->info("head-: {:.0f}", o_head->relativeDeadline[level]);
+
+	return deadlineStack;
+}
+
+void DeepLabV3PlusImpl::setAbsoluteDeadline(int level, steady_clock::time_point start)
+{
+	o_encoder->setAbsoluteDeadline(level, start);
+	m_decoder->setAbsoluteDeadline(level, start);
+	o_head->setAbsoluteDeadline(level, start);
 }

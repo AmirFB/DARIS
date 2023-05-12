@@ -115,12 +115,12 @@ struct BasicBlock : public MyContainer
 		return out;
 	}
 
-	Tensor schedule(string name, Tensor input, int level) override
+	Tensor schedule(Tensor input, int level) override
 	{
 		Tensor output;
 
 		if (!m_downsample->is_empty())
-			o_downsample->startSchedule(input);
+			o_downsample->startSchedule(&input);
 
 		output = o_conv1->scheduleSync(input);
 		output = o_bn1->scheduleSync(output);
@@ -504,7 +504,7 @@ struct ResNet : public MyContainer
 		m_fc = register_module(
 			"fc", Linear(512 * Block::m_expansion, num_classes));
 
-		m_layerX = XSequential(512 * Block::m_expansion, num_classes);
+		// m_layerX = XSequential(512 * Block::m_expansion, num_classes);
 
 		for (auto m : modules(false))
 		{
@@ -566,10 +566,10 @@ struct ResNet : public MyContainer
 	AdaptiveAvgPool2d m_avgpool{ nullptr };
 	Linear m_fc{ nullptr };
 	MySequential m_layer0{ nullptr };
-	XSequential m_layerX;
+	// XSequential m_layerX;
 
 	// shared_ptr<Operation> o_conv1, o_bn1, o_relu, o_maxpool, o_layer1, o_layer2, o_layer3, o_layer4, o_avgpool, o_fc;
-	shared_ptr<Operation> o_layer0, o_layer1, o_layer2, o_layer3, o_layer4, o_layerX;
+	shared_ptr<Operation> o_layer0, o_layer1, o_layer2, o_layer3, o_layer4, o_avgpool, o_fc;//o_layerX;
 
 	MySequential _make_layer(int64_t planes, int64_t blocks,
 		int64_t stride = 1, bool dilate = false)
@@ -642,7 +642,7 @@ struct ResNet : public MyContainer
 
 	Tensor forward(Tensor x) { return _forward_impl(x); }
 
-	Tensor schedule(string name, Tensor input, int level) override
+	Tensor schedule(Tensor input, int level) override
 	{
 		input = o_layer0->scheduleSync(input);
 
@@ -661,17 +661,17 @@ struct ResNet : public MyContainer
 
 		else
 		{
-			input = m_layer1.schedule(name, input, level);
-			input = m_layer2.schedule(name, input, level);
-			input = m_layer3.schedule(name, input, level);
-			input = m_layer4.schedule(name, input, level);
+			input = m_layer1.schedule(input, level);
+			input = m_layer2.schedule(input, level);
+			input = m_layer3.schedule(input, level);
+			input = m_layer4.schedule(input, level);
 		}
 
-		// input = o_avgpool->scheduleSync(input);
-		// input = flatten(input, 1);
-		// input = o_fc->scheduleSync(input);
+		input = o_avgpool->scheduleSync(input);
+		input = flatten(input, 1);
+		input = o_fc->scheduleSync(input);
 
-		input = o_layerX->scheduleSync(input);
+		// input = o_layerX->scheduleSync(input);
 
 		return input;
 	}
@@ -686,16 +686,16 @@ struct ResNet : public MyContainer
 		// o_relu = addOperation(this, "relu", m_relu.ptr());
 		// o_maxpool = addOperation(this, "maxpool", m_maxpool.ptr());
 
-		copyOperations("layer1", m_layer1, 3);
+		// copyOperations("layer1", m_layer1, 3);
 		o_layer1 = addOperation(this, "layer1", m_layer1.ptr(), 3);
 
-		copyOperations("layer2", m_layer2, 3);
+		// copyOperations("layer2", m_layer2, 3);
 		o_layer2 = addOperation(this, "layer2", m_layer2.ptr(), 3);
 
-		copyOperations("layer3", m_layer3, 3);
+		// copyOperations("layer3", m_layer3, 3);
 		o_layer3 = addOperation(this, "layer3", m_layer3.ptr(), 3);
 
-		copyOperations("layer4", m_layer4, 3);
+		// copyOperations("layer4", m_layer4, 3);
 		o_layer4 = addOperation(this, "layer4", m_layer4.ptr(), 3);
 
 		// m_layerX = MySequential(o_avgpool, o_fc);
@@ -709,11 +709,11 @@ struct ResNet : public MyContainer
 		// 		return x;
 		// 		})
 		// };
+		// auto temp = make_shared<XSequential>(m_layerX);
+		// o_layerX = addOperation(this, "layerX", temp, 3);
 
-		o_layerX = addOperation(this, "layerX", make_shared<XSequential>(m_layerX), 3);
-
-		// o_avgpool = addOperation(this, "avgpool", m_avgpool.ptr());
-		// o_fc = addOperation(this, "fc", m_fc.ptr());
+		o_avgpool = addOperation(this, "avgpool", m_avgpool.ptr());
+		o_fc = addOperation(this, "fc", m_fc.ptr());
 	}
 
 	Tensor analyze(int warmup, int repeat, Tensor input, int level)
@@ -741,11 +741,11 @@ struct ResNet : public MyContainer
 			input = m_layer4.analyze(warmup, repeat, input, level);
 		}
 
-		// input = o_avgpool->analyze(warmup, repeat, input);
-		// input = flatten(input, 1);
-		// input = o_fc->analyze(warmup, repeat, input);
+		input = o_avgpool->analyze(warmup, repeat, input);
+		input = flatten(input, 1);
+		input = o_fc->analyze(warmup, repeat, input);
 
-		input = o_layerX->analyze(warmup, repeat, input);
+		// input = o_layerX->analyze(warmup, repeat, input);
 
 		return input;
 	}
@@ -785,22 +785,28 @@ struct ResNet : public MyContainer
 		tempStack += m_layer3.assignExecutionTime(level + 1, contextIndex, 0);
 		tempStack += m_layer4.assignExecutionTime(level + 1, contextIndex, 0);
 
-		contextData[level].resize(Scheduler::smOptions.size());
-
 		for (int i = 0; i < Scheduler::smOptions.size(); i++)
 		{
-			contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
+			// contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 
 			// contextData[level][i].stackExecutionTime(o_avgpool->contextData[i]);
 			// contextData[level][i].stackExecutionTime(o_fc->contextData[i]);
 
-			contextData[level][i].stackExecutionTime(o_layer0->contextData[i]);
+			contextData[level][i].stackExecutionTime(m_layer1.contextData[level][i]);
+			contextData[level][i].stackExecutionTime(m_layer2.contextData[level][i]);
+			contextData[level][i].stackExecutionTime(m_layer3.contextData[level][i]);
+			contextData[level][i].stackExecutionTime(m_layer4.contextData[level][i]);
+
+			// contextData[level][i].stackExecutionTime(o_layerX->contextData[i]);
+
+			contextData[level][i].stackExecutionTime(o_avgpool->contextData[i]);
+			contextData[level][i].stackExecutionTime(o_fc->contextData[i]);
 		}
 
-		// tempStack += o_avgpool->getRegulatedExecutionTime(contextIndex);
-		// tempStack += o_fc->getRegulatedExecutionTime(contextIndex);
+		tempStack += o_avgpool->getRegulatedExecutionTime(contextIndex);
+		tempStack += o_fc->getRegulatedExecutionTime(contextIndex);
 
-		tempStack += o_layer0->getRegulatedExecutionTime(contextIndex);
+		// tempStack += o_layerX->getRegulatedExecutionTime(contextIndex);
 
 		regulatedExecutionTime[level] = tempStack;
 		return executionTimeStack + tempStack;
@@ -868,24 +874,24 @@ struct ResNet : public MyContainer
 		usedDeadline += tempDeadline;
 		deadlineStack += tempDeadline;
 
-		// o_avgpool->relativeDeadline[level] = o_avgpool->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
-		// usedDeadline += o_avgpool->relativeDeadline[level];
-		// deadlineStack += o_avgpool->relativeDeadline[level];
-		// o_avgpool->stackedDeadline[level] = deadlineStack;
+		o_avgpool->relativeDeadline[level] = o_avgpool->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
+		usedDeadline += o_avgpool->relativeDeadline[level];
+		deadlineStack += o_avgpool->relativeDeadline[level];
+		o_avgpool->stackedDeadline[level] = deadlineStack;
 
 		// // cout << o_avgpool->getFullName() << ": " << o_avgpool->relativeDeadline[level] << "-->" << o_avgpool->stackedDeadline[level] << endl;
 
-		// o_fc->relativeDeadline[level] = o_fc->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
-		// usedDeadline += o_fc->relativeDeadline[level];
-		// deadlineStack += o_fc->relativeDeadline[level];
-		// o_fc->stackedDeadline[level] = deadlineStack;
+		o_fc->relativeDeadline[level] = o_fc->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
+		usedDeadline += o_fc->relativeDeadline[level];
+		deadlineStack += o_fc->relativeDeadline[level];
+		o_fc->stackedDeadline[level] = deadlineStack;
 
 		// // cout << o_fc->getFullName() << ": " << o_fc->relativeDeadline[level] << "-->" << o_fc->stackedDeadline[level] << endl;
 
-		o_layerX->relativeDeadline[level] = o_layerX->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
-		usedDeadline += o_layerX->relativeDeadline[level];
-		deadlineStack += o_layerX->relativeDeadline[level];
-		o_layerX->stackedDeadline[level] = deadlineStack;
+		// o_layerX->relativeDeadline[level] = o_layerX->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
+		// usedDeadline += o_layerX->relativeDeadline[level];
+		// deadlineStack += o_layerX->relativeDeadline[level];
+		// o_layerX->stackedDeadline[level] = deadlineStack;
 
 		return deadlineStack;
 	}
