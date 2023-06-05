@@ -144,14 +144,14 @@ double ASPPImpl::assignExecutionTime(int level, int contextIndex, double executi
 	double tempStack = 0;
 	int maxIndex = 0;
 	level -= 1;
-	contextData[level].resize(Scheduler::smOptions.size());
+	contextData[level].resize(Scheduler::contextCount);
 
 	for (int i = 1; i < m_modules.size(); i++)
 		if (o_modules[i]->getRegulatedExecutionTime(contextIndex) >
 			o_modules[maxIndex]->getRegulatedExecutionTime(contextIndex))
 			maxIndex = i;
 
-	for (int i = 0; i < Scheduler::smOptions.size(); i++)
+	for (int i = 0; i < Scheduler::contextCount; i++)
 	{
 		contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 
@@ -202,13 +202,13 @@ double ASPPImpl::assignDeadline(double quota, int level, int contextIndex, doubl
 	return deadlineStack;
 }
 
-void ASPPImpl::setAbsoluteDeadline(int level, steady_clock::time_point start)
+void ASPPImpl::setAbsoluteDeadline(int level, steady_clock::time_point start, int bias)
 {
 	for (int i = 0; i < o_modules.size(); i++)
-		o_modules[i]->setAbsoluteDeadline(level, start);
+		o_modules[i]->setAbsoluteDeadline(level, start, bias);
 
-	o_aspppooling->setAbsoluteDeadline(level, start);
-	o_project->setAbsoluteDeadline(level, start);
+	o_aspppooling->setAbsoluteDeadline(level, start, bias);
+	o_project->setAbsoluteDeadline(level, start, bias);
 }
 
 DeepLabV3DecoderImpl::DeepLabV3DecoderImpl(int in_channels, int out_channels, vector<int> atrous_rates)
@@ -313,11 +313,11 @@ double DeepLabV3PlusDecoderImpl::assignExecutionTime(int level, int contextIndex
 {
 	double tempStack = 0;
 	level -= 1;
-	contextData[level].resize(Scheduler::smOptions.size());
+	contextData[level].resize(Scheduler::contextCount);
 
 	tempStack += m_aspp->assignExecutionTime(level + 1, contextIndex, 0);
 
-	for (int i = 0; i < Scheduler::smOptions.size(); i++)
+	for (int i = 0; i < Scheduler::contextCount; i++)
 	{
 		contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 
@@ -383,11 +383,11 @@ double DeepLabV3PlusDecoderImpl::assignDeadline(double quota, int level, int con
 	return deadlineStack;
 }
 
-void DeepLabV3PlusDecoderImpl::setAbsoluteDeadline(int level, steady_clock::time_point start)
+void DeepLabV3PlusDecoderImpl::setAbsoluteDeadline(int level, steady_clock::time_point start, int bias)
 {
-	m_aspp->setAbsoluteDeadline(level, start);
-	o_aspp_seq->setAbsoluteDeadline(level, start);
-	o_up->setAbsoluteDeadline(level, start);
-	o_block1->setAbsoluteDeadline(level, start);
-	o_block2->setAbsoluteDeadline(level, start);
+	m_aspp->setAbsoluteDeadline(level, start, bias);
+	o_aspp_seq->setAbsoluteDeadline(level, start, bias);
+	o_up->setAbsoluteDeadline(level, start, bias);
+	o_block1->setAbsoluteDeadline(level, start, bias);
+	o_block2->setAbsoluteDeadline(level, start, bias);
 }

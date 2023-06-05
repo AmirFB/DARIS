@@ -1,11 +1,14 @@
 cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
-project(fgprs)
+project(fgprs LANGUAGES CXX CUDA)
+# project(fgprs)
 
+set(CUDA_TOOLKIT_ROOT_DIR "/usr/local/cuda")
 set(CUDA_HOME "/usr/local/cuda")
-set(CMAKE_CUDA_COMPILER "/home/amir/anaconda3/envs/lt-source/bin/nvcc")
-set(CUDNN_LIBRARY_PATH "/home/amir/anaconda3/envs/lt-source/lib/libcudnn.so")
-set(CUDNN_INCLUDE_PATH "/home/amir/anaconda3/envs/lt-source/include")
-
+set(CMAKE_CUDA_COMPILER "/usr/local/cuda/bin/nvcc")
+set(CUDA_NVCC_EXECUTABLE "/usr/local/cuda/bin/nvcc")
+set(CUDNN_LIBRARY_PATH "/home/amir/anaconda3/envs/libtorch/lib/libcudnn.so")
+set(CUDNN_INCLUDE_PATH "/home/amir/anaconda3/envs/libtorch/include")
+set(CUDA_INCLUDE_DIRS "/usr/local/cuda/include")
 # set(TORCH_CXX_FLAGS "-D_GLIBCXX_USE_CXX11_ABI=0")
 # set(CMAKE_CXX_FLAGS "-D_GLIBCXX_USE_CXX11_ABI=0")
 

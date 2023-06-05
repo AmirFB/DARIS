@@ -132,9 +132,9 @@ double DeepLabV3PlusImpl::assignExecutionTime(int level, int contextIndex, doubl
 
 	level -= 1;
 
-	contextData[level].resize(Scheduler::smOptions.size());
+	contextData[level].resize(Scheduler::contextCount);
 
-	for (int i = 0; i < Scheduler::smOptions.size(); i++)
+	for (int i = 0; i < Scheduler::contextCount; i++)
 	{
 		contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 		contextData[level][i].stackExecutionTime(o_encoder->contextData[i]);
@@ -144,7 +144,7 @@ double DeepLabV3PlusImpl::assignExecutionTime(int level, int contextIndex, doubl
 
 	tempStack += m_decoder->assignExecutionTime(level + 1, contextIndex, 0);
 
-	for (int i = 0; i < Scheduler::smOptions.size(); i++)
+	for (int i = 0; i < Scheduler::contextCount; i++)
 		contextData[level][i].stackExecutionTime(o_head->contextData[i]);
 
 	tempStack += o_head->getRegulatedExecutionTime(contextIndex);
@@ -187,9 +187,9 @@ double DeepLabV3PlusImpl::assignDeadline(double quota, int level, int contextInd
 	return deadlineStack;
 }
 
-void DeepLabV3PlusImpl::setAbsoluteDeadline(int level, steady_clock::time_point start)
+void DeepLabV3PlusImpl::setAbsoluteDeadline(int level, steady_clock::time_point start, int bias)
 {
-	o_encoder->setAbsoluteDeadline(level, start);
-	m_decoder->setAbsoluteDeadline(level, start);
-	o_head->setAbsoluteDeadline(level, start);
+	o_encoder->setAbsoluteDeadline(level, start, bias);
+	m_decoder->setAbsoluteDeadline(level, start, bias);
+	o_head->setAbsoluteDeadline(level, start, bias);
 }

@@ -11,7 +11,7 @@
 # include <cuda_runtime.h>
 
 # include <torch/torch.h>
-// # include <c10/cuda/CUDAStream.h>
+# include <c10/cuda/CUDAStream.h>
 
 using namespace FGPRS;
 
@@ -23,6 +23,17 @@ MyContext::MyContext(unsigned smCount, int index, bool isDefault) :
 	_pMutex(new mutex), _pQueueMutex(new mutex), //_lock(*_pMutex),
 	cv(new condition_variable())
 {
+	if (smCount <= 20)
+		maxParallel = 2;
+
+	else if (smCount < 40)
+		maxParallel = 2;
+
+	else if (smCount < 60)
+		maxParallel = 2;
+
+	else
+		maxParallel = 2;
 }
 
 bool MyContext::initialize()
@@ -33,6 +44,7 @@ bool MyContext::initialize()
 	{
 		result &= cuInit(0) == CUDA_SUCCESS;
 		result &= cuCtxGetCurrent(&_context) == CUDA_SUCCESS;
+		// return result;
 	}
 
 	else
@@ -51,9 +63,7 @@ bool MyContext::initialize()
 
 	result &= cuCtxGetLimit(&temp, CU_LIMIT_MALLOC_HEAP_SIZE) == CUDA_SUCCESS;
 	result &= cuCtxSetLimit(CU_LIMIT_MALLOC_HEAP_SIZE,
-		temp + ((Scheduler::smOptions.size() + (Scheduler::type != PROPOSED_SCHEDULER)) << 16)) == CUDA_SUCCESS;
-
-	result &= cuCtxGetLimit(&temp, CU_LIMIT_MALLOC_HEAP_SIZE) == CUDA_SUCCESS;
+		temp + (Scheduler::contextCount << 16)) == CUDA_SUCCESS;
 
 	return result;
 }
@@ -65,7 +75,7 @@ bool MyContext::select()
 	// 	return MyContext::selectDefault();
 
 	// busy = true;
-
+	c10::cuda::CUDAStream::setContextIndex(index);
 	return cuCtxSetCurrent(_context) == CUDA_SUCCESS;
 }
 
@@ -101,24 +111,82 @@ bool MyContext::release()
 
 void MyContext::lock()
 {
-	// cout << "Locking " << smCount << "\tcount: " << lockCount << endl;
 	unique_lock<mutex> lock(*_pMutex);
-	while (lockCount >= 2)
-	{
+
+	while (lockCount >= maxParallel)
 		cv->wait(lock);
-		cout << "Notified " << smCount << "\tcount: " << lockCount << endl;
-	}
-	// cout << "Locked " << smCount << endl;
+
 	lockCount++;
+}
+
+void MyContext::lock(Operation* operation)
+{
+	lock();
+	return;
+	bool preCondition = !operation->isLatest && !operation->highPriority;
+	unique_lock<mutex> lock(*_pMutex);
+
+	if (preCondition)
+		while (lockCount >= maxParallel && (!operation->isReady))
+			cv->wait(lock);
+
+	lockCount++;
+	operation->running = true;
 }
 
 void MyContext::unlock()
 {
 	unique_lock<mutex> lock(*_pMutex);
+
 	lockCount--;
-	cout << "Unlocking " << smCount << "\tcount: " << lockCount << endl;
-	cv->notify_one();
-	cout << "Unlocked " << smCount << endl;
+	cv->notify_all();
+}
+
+void MyContext::unlock(Operation* operation)
+{
+	unlock();
+	return;
+	unique_lock<mutex> lock(*_pMutex);
+	operation->running = false;
+	operation->isReady = false;
+
+	microseconds minSlack = microseconds::max(), tempSlack;
+	auto now = steady_clock::now();
+	Operation* minSlackOp = nullptr;
+
+	for (auto op : queue)
+	{
+		if (op->running)
+			continue;
+
+		tempSlack = duration_cast<microseconds>(op->absoluteDeadline - now) - microseconds((int)op->contextData[index].occupiedExecutionTime);
+
+		if (tempSlack < minSlack)
+		{
+			minSlack = tempSlack;
+			minSlackOp = op;
+		}
+	}
+
+	// time_point earliestDeadline = now + microseconds(1000);
+
+	// for (auto op : queue)
+	// {
+	// 	if (op->running)
+	// 		continue;
+
+	// 	if (op->absoluteDeadline < earliestDeadline)
+	// 	{
+	// 		earliestDeadline = op->absoluteDeadline;
+	// 		minSlackOp = op;
+	// 	}
+	// }
+
+	// if (minSlackOp != nullptr)
+	// 	minSlackOp->isReady = true;
+
+	lockCount--;
+	cv->notify_all();
 }
 
 void MyContext::queueOperation(Operation* operation)
@@ -142,8 +210,8 @@ steady_clock::time_point MyContext::getFinishTime()
 	if (queue.size() == 0)
 		return _finishTime = steady_clock::now();
 
-	if (!_changed)
-		return _finishTime;
+	// if (!_changed)
+	// 	return _finishTime;
 
 	_changed = false;
 	double sum = 0;
@@ -151,11 +219,23 @@ steady_clock::time_point MyContext::getFinishTime()
 	for (auto op : queue)
 		sum += op->contextData[index].occupiedExecutionTime;
 
-	_finishTime = queue[0]->startTime + microseconds((int)sum);
+	time_point<steady_clock> dummystart;
+
+	if ((queue[0]->startTime + microseconds((int)queue[0]->contextData[index].occupiedExecutionTime)) < steady_clock::now())
+		dummystart = steady_clock::now();
+	else
+		dummystart = queue[0]->startTime;
+
+	_finishTime = dummystart + microseconds((int)sum);
 	return _finishTime;
 }
 
 bool MyContext::isEmpty()
 {
 	return queue.size() == 0;
+}
+
+bool MyContext::hasCapacity()
+{
+	return queue.size() < maxParallel;
 }

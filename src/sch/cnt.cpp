@@ -12,6 +12,8 @@
 # include <unistd.h>
 # include <filesystem>
 
+# include <nvToolsExt.h>
+
 using namespace torch;
 using namespace torch::nn;
 
@@ -27,9 +29,9 @@ void MyContainer::initLoggers(string name)
 
 	mkdir(("logs/" + name).c_str(), 0777);
 
-	remove(("logs/" + name + "/analyze.log").c_str());
-	remove(("logs/" + name + "/deadline.log").c_str());
-	remove(("logs/" + name + "/schedule.log").c_str());
+	// remove(("logs/" + name + "/analyze.log").c_str());
+	// remove(("logs/" + name + "/deadline.log").c_str());
+	// remove(("logs/" + name + "/schedule.log").c_str());
 
 	analyzeLogger = spdlog::basic_logger_mt(name + "_analyze", "logs/" + name + "/analyze.log");
 	deadlineLogger = spdlog::basic_logger_mt(name + "_deadline", "logs/" + name + "/deadline.log");
@@ -39,6 +41,14 @@ void MyContainer::initLoggers(string name)
 	analyzeLogger->flush_on(spdlog::level::info);
 	deadlineLogger->set_pattern("[%S.%f] %v");
 	scheduleLogger->set_pattern("[%S.%f] %v");
+}
+
+void MyContainer::clearAnalyzeLogger(string name)
+{
+	remove(("logs/" + name + "/analyze.log").c_str());
+	spdlog::drop(name + "_analyze");
+	analyzeLogger = spdlog::basic_logger_mt(name + "_analyze", "logs/" + name + "/analyze.log");
+	analyzeLogger->set_pattern("[%S.%f] %v");
 }
 
 void MyContainer::clearScheduleLogger(string name)
@@ -127,7 +137,11 @@ void MyContainer::analyze(int warmup, int repeat, Tensor input)
 Tensor MyContainer::analyze(int warmup, int repeat, Tensor input, int level)
 {
 	for (auto op : operations[level - 1])
+	{
+		auto id = nvtxRangeStartA(op->getFullName().c_str());
 		input = op->analyze(warmup, repeat, input);
+		nvtxRangeEnd(id);
+	}
 
 	return input;
 }
@@ -137,9 +151,9 @@ double MyContainer::assignExecutionTime(int level, int contextIndex, double exec
 	double timeStack = 0;
 	level -= 1;
 
-	contextData[level].resize(Scheduler::smOptions.size());
+	contextData[level].resize(Scheduler::contextCount);
 
-	for (int i = 0; i < Scheduler::smOptions.size(); i++)
+	for (int i = 0; i < Scheduler::contextCount; i++)
 	{
 		contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 
@@ -163,15 +177,18 @@ double MyContainer::assignDeadline(double quota, int level, int contextIndex, do
 		op->relativeDeadline[level] = op->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
 		deadlineStack += op->relativeDeadline[level];
 		op->stackedDeadline[level] = deadlineStack;
-
-		// cout << op->getFullName() << ": " << op->relativeDeadline[level] << "-->" << op->stackedDeadline[level] << endl;
+		deadlineLogger->info("{}: {:.0f}", op->getFullName().c_str(), op->relativeDeadline[level]);
+		// cout << fixed << setprecision(0) << op->getFullName() << "(" << level << ", " << contextIndex << "):\n\t"
+		// 	<< op->getRegulatedExecutionTime(contextIndex) << "-->" << regulatedExecutionTime[level] << endl;
+		// cout << "\t"
+		// 	<< op->relativeDeadline[level] << "-->" << op->stackedDeadline[level] << endl;
 	}
 
 	return deadlineStack;
 }
 
-void MyContainer::setAbsoluteDeadline(int level, steady_clock::time_point start)
+void MyContainer::setAbsoluteDeadline(int level, steady_clock::time_point start, int bias)
 {
 	for (auto op : operations[level - 1])
-		op->setAbsoluteDeadline(level, start);
+		op->setAbsoluteDeadline(level, start, bias);
 }

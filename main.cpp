@@ -8,8 +8,13 @@
 # include <cstdlib>
 # include <future>
 # include <sys/stat.h>
+# include <random>
+# include <ctime>
+# include <filesystem>
 # include "spdlog/spdlog.h"
 # include "spdlog/sinks/basic_file_sink.h"
+
+# include "nvToolsExt.h"
 
 # include <torch/torch.h>
 # include <torch/script.h>
@@ -20,6 +25,7 @@
 # include <cuda.h>
 # include <cudaTypedefs.h>
 # include <cuda_runtime.h>
+# include <cuda_profiler_api.h>
 
 # include <loop.hpp>
 # include <schd.hpp>
@@ -46,38 +52,47 @@ using namespace torch;
 using namespace torch::nn;
 using namespace FGPRS;
 
-# define MODULES_COUNT	5
-# define FREQUENCY			60
-# define REPEAT 				1
-
 shared_ptr<logger> logger;
 
 void distributeSMs(int* array, int total, int count);
+vector<double> generateUtilization(int count, double total);
+
+double maxFPS[] = { 769, 302, 92, 473, 144, 44 };
 
 int main(int argc, char** argv)
 {
+	srand(time(nullptr));
 	auto logger = spdlog::basic_logger_mt("main_logger", "log.log");
 	logger->set_pattern("[%S.%f] %v");
 	NoGradGuard no_grad;
 	int level = 3;
+	int moduleCount;
+	double frequency;
 
 	SchedulerType type;
 	int* smOptions;
 	int smCount;
+
+	moduleCount = atoi(argv[2]);
+	frequency = atof(argv[3]);
 
 	cout << "Initializing scheduler ..." << endl;
 
 	if (!strcmp(argv[1], "proposed"))
 	{
 		type = PROPOSED_SCHEDULER;
-		smCount = 4;
-		smOptions = new int[] { 10, 20, 30, 40 };
+
+		smCount = atoi(argv[4]);
+		smOptions = new int[smCount];
+
+		for (int i = 0; i < smCount; i++)
+			smOptions[i] = atoi(argv[5 + i]);
 	}
 
 	else if (!strcmp(argv[1], "mps"))
 	{
 		type = MPS_SCHEDULER;
-		smCount = MODULES_COUNT;
+		smCount = moduleCount;
 		smOptions = new int[smCount];
 
 		for (int i = 0; i < smCount; i++)
@@ -87,7 +102,7 @@ int main(int argc, char** argv)
 	else if (!strcmp(argv[1], "pmps"))
 	{
 		type = PMPS_SCHEDULER;
-		smCount = MODULES_COUNT;
+		smCount = moduleCount;
 		smOptions = new int[smCount];
 		distributeSMs(smOptions, 68, smCount);
 	}
@@ -95,7 +110,7 @@ int main(int argc, char** argv)
 	else if (!strcmp(argv[1], "pmpso"))
 	{
 		type = PMPSO_SCHEDULER;
-		smCount = MODULES_COUNT;
+		smCount = moduleCount;
 		smOptions = new int[smCount];
 		distributeSMs(smOptions, max(68 * (smCount / 2 + 0.5), 68.0), smCount);
 	}
@@ -104,29 +119,63 @@ int main(int argc, char** argv)
 	{
 		type = NOMPS_SCHEDULER;
 		smCount = 1;
-		smOptions = new int[] {68};
+		smOptions = new int[1] {68};
 	}
 
-	Scheduler::initialize(smOptions, smCount, type);
+	Scheduler::initialize(smOptions, smCount, type, true);
+	MyContext::selectDefault();
 
-	Tensor inputs[MODULES_COUNT];
-	shared_ptr<MyContainer> mods[MODULES_COUNT];
-	// shared_ptr<ResNet<BasicBlock>> mods[MODULES_COUNT];
-	// shared_ptr<DeepLabV3Plus> mods[MODULES_COUNT];
-	Loop loops[MODULES_COUNT];
+	Tensor inputs[moduleCount];
+	shared_ptr<MyContainer> mods[moduleCount];
+	// shared_ptr<ResNet<BasicBlock>> mods[moduleCount];
+	// shared_ptr<DeepLabV3Plus> mods[moduleCount];
+	Loop loops[moduleCount];
 
 	cout << "Initializing modules ..." << endl;
+	filesystem::remove_all("logs");
 
-	for (int i = 0; i < MODULES_COUNT; i++)
+	string name;
+	int modIndex, inputSize;
+	double freq;
+	auto quotas = generateUtilization(moduleCount, frequency);
+	string freqStr;
+
+	// cudaProfilerStart();
+
+	for (int i = 0; i < moduleCount; i++)
 	{
-		string name = "res";
-		cout << "\t" << name << (i + 1) << endl;
-		inputs[i] = torch::randn({ 1, 3, 224, 224 }, kCUDA);
+		modIndex = rand() % 1;
+		inputSize = modIndex % 3 == 0 ? 224 : (modIndex % 3 == 1 ? 512 : 1024);
+		// freq = quotas[i] * maxFPS[modIndex];
+		// freq = (i + 1) * 15 - 1;
+		freq = 80;
+
+		stringstream stream;
+		stream << fixed << setprecision(2) << freq;
+		freqStr = stream.str();
+
+		name = (modIndex < 3 ? "resnet" : "deeplab") +
+			to_string(i + 1) + "_" + to_string(inputSize) + "_" + freqStr + "Hz";
+
+		cout << "\t" << setprecision(2) << name << (i + 1) << " (" << (quotas[i] / frequency * 100) << "%)" << endl;
+
+		// inputs[i] = torch::randn({ 1, 3, 224, 224 }, kCUDA);
 		// mods[i] = resnet18(1000);
-		mods[i] = make_shared<DeepLabV3PlusImpl>(DeepLabV3PlusImpl(100, "resnet18"));
-		loops[i] = Loop(name + to_string(i + 1), mods[i], FREQUENCY, i);
-		loops[i].initialize(3, inputs[i], type, level);
+		// mods[i] = make_shared<DeepLabV3PlusImpl>(DeepLabV3PlusImpl(100, "resnet18"));
+		// loops[i] = Loop(name + to_string(i + 1), mods[i], frequency, i);
+
+		inputs[i] = torch::randn({ 1, 3, inputSize, inputSize }, kCUDA);
+
+		if (modIndex < 3)
+			mods[i] = resnet18(1000);
+		else
+			mods[i] = make_shared<DeepLabV3PlusImpl>(DeepLabV3PlusImpl(100, "resnet18"));
+
+		loops[i] = Loop(name, mods[i], freq, i);
+		loops[i].initialize(smCount - 1, inputs[i], type, level);
 	}
+
+	// cudaProfilerStop();
 
 	// inputs[0] = torch::randn({ 1, 3, 1024, 1024 }, kCUDA);
 	// mods[0] = resnet18(1000);
@@ -135,36 +184,50 @@ int main(int argc, char** argv)
 
 	cout << "Warming up ..." << endl;
 
-	for (int i = 0; i < MODULES_COUNT; i++)
-		loops[i].start(&inputs[i], type, level);
+	// cudaProfilerStart();
+	for (int i = 0; i < moduleCount; i++)
+		loops[i].start(&inputs[i], type, level, false);
 
-	this_thread::sleep_for(milliseconds(250));
+	this_thread::sleep_for(milliseconds(500));
 
-	for (int i = 0; i < MODULES_COUNT; i++)
+	for (int i = 0; i < moduleCount; i++)
+		loops[i].stop();
+
+	for (int i = 0; i < moduleCount; i++)
 		loops[i].wait();
 
 	cout << endl << endl << endl << endl << endl;
 
 	// system("clear");
+	cout << "Memory: " << Scheduler::getFreeMemoryGB() << " GB" << endl;
 	cout << "Here we go ...\n";
+
+	auto now = std::time(nullptr);
+	char time_string[20];
+	std::strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+	std::cout << "Current time: " << time_string << ".";
+	std::clock_t clock = std::clock();
+	double microseconds = 1000000.0 * static_cast<double>(clock) / CLOCKS_PER_SEC;
+	std::cout << std::fixed << std::setprecision(0) << std::setw(6) << std::setfill('0') << microseconds << std::endl;
 
 	logger->info("Started!");
 
-	for (int j = 0; j < REPEAT; j++)
-	{
-		for (int i = 0; i < MODULES_COUNT; i++)
-			loops[i].start(&inputs[i], type, level);
+	cudaProfilerStart();
+	nvtxRangePush("whole");
 
-		this_thread::sleep_for(milliseconds(1000));
+	for (int i = 0; i < moduleCount; i++)
+		loops[i].start(&inputs[i], type, level, true);
 
-		for (int i = 0; i < MODULES_COUNT; i++)
-			loops[i].stop();
+	this_thread::sleep_for(milliseconds(1000));
 
-		for (int i = 0; i < MODULES_COUNT; i++)
-			loops[i].wait();
+	for (int i = 0; i < moduleCount; i++)
+		loops[i].stop();
 
-		cout << endl << endl << endl << endl << endl;
-	}
+	for (int i = 0; i < moduleCount; i++)
+		loops[i].wait();
+
+	nvtxRangePop();
+	cudaProfilerStop();
 
 	logger->info("Finished!");
 
@@ -207,4 +270,25 @@ void distributeSMs(int* array, int total, int count)
 			rem -= 2;
 		}
 	}
+}
+
+vector<double> generateUtilization(int count, double total)
+{
+	vector<double> result(count);
+	random_device rd;
+	std::mt19937 gen(rd());
+	uniform_real_distribution<double> dis(0.05, 0.9);
+
+	double sum = 0;
+
+	for (int i = 0; i < count; i++)
+	{
+		result[i] = dis(gen);
+		sum += result[i];
+	}
+
+	for (int i = 0; i < count; i++)
+		result[i] = result[i] / sum * total;
+
+	return result;
 }

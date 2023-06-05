@@ -25,6 +25,8 @@ namespace FGPRS
 		static vector<int> smOptions;
 		static bool _stopDummy;
 		static SchedulerType type;
+		static int contextCount;
+		static bool noDefault;
 
 	private:
 		static MyContext* _contextPool;
@@ -34,7 +36,7 @@ namespace FGPRS
 		static future<void>* _th;
 
 	public:
-		static bool initialize(int[], int, SchedulerType type = NOMPS_SCHEDULER);
+		static bool initialize(int[], int, SchedulerType type = NOMPS_SCHEDULER, bool noDefault = false);
 		static MyContext* selectContext(int);
 		static MyContext* selectContextByIndex(int index);
 		static MyContext* selectDefaultContext();
@@ -54,6 +56,8 @@ namespace FGPRS
 
 		static MyContext* getMinimalContext(Operation* operation);
 		static MyContext* getFastestContext(Operation* operation);
+
+		static bool anyEmptyContext();
 	};
 }
 

@@ -41,14 +41,14 @@ public:
 	Tensor analyze(int warmup, int repeat, Tensor input, int level) override;
 	double assignExecutionTime(int level, int contextIndex, double executionTimeStack) override;
 	double assignDeadline(double quota, int level, int contextIndex, double deadlineStack) override;
-	void setAbsoluteDeadline(int level, steady_clock::time_point start) override;
+	void setAbsoluteDeadline(int level, steady_clock::time_point start, int bias) override;
 }; TORCH_MODULE(ASPP);
 
 class DeepLabV3DecoderImpl : public MyContainer
 {
 public:
 	DeepLabV3DecoderImpl(int in_channels, int out_channels = 256, vector<int> atrous_rates = { 12, 24, 36 });
-	torch::Tensor forward(vector< torch::Tensor> x);
+	torch::Tensor forward(vector<torch::Tensor> x);
 	int out_channels = 0;
 private:
 	MySequential seq{};
@@ -75,5 +75,5 @@ public:
 	Tensor analyzeMISO(int warmup, int repeat, vector<Tensor> inputs, int level);
 	double assignExecutionTime(int level, int contextIndex, double executionTimeStack) override;
 	double assignDeadline(double quota, int level, int contextIndex, double deadlineStack) override;
-	void setAbsoluteDeadline(int level, steady_clock::time_point start) override;
+	void setAbsoluteDeadline(int level, steady_clock::time_point start, int bias) override;
 }; TORCH_MODULE(DeepLabV3PlusDecoder);

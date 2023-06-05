@@ -27,6 +27,7 @@ namespace FGPRS
 	{
 	private:
 		string _name, _fullName, _lastParentName;
+		char _cName[100];
 		thread _th;
 		Tensor* _output;
 		MyContext* _chosenContext;
@@ -42,8 +43,11 @@ namespace FGPRS
 		steady_clock::time_point absoluteDeadline;
 		double isolatedScalability, occupiedScalability, predictability;
 		vector<ContextData> contextData;
-		steady_clock::time_point startTime, finishTime;
-		bool highPriority = false;
+		steady_clock::time_point startTime, finishTime, earliestTime;
+		bool highPriority = false, isLatest = false;
+		int queueCount = 0;
+		bool isReady = false;
+		bool running = false;
 
 		Operation() : _stream(c10::cuda::getStreamFromPool()) {}
 		string getName();
@@ -52,17 +56,17 @@ namespace FGPRS
 		void setParentName(string parentName);
 
 		template <typename ModuleType>
-		Operation(MyContainer* owner, string name, shared_ptr<ModuleType> module, bool isHighPriority = false)
+		Operation(MyContainer* owner, string name, shared_ptr<ModuleType> module, bool isHighPriority = false, bool isLatest = false)
 			: _parent(owner), _name(name), _fullName(name),
 			sequential(Sequential(module)), _stream(c10::cuda::getStreamFromPool()),
-			highPriority(isHighPriority)
+			highPriority(isHighPriority), isLatest(isLatest)
 		{
 		}
 
-		Operation(MyContainer* owner, string name, shared_ptr<MyContainer> module, bool dumm, bool isHighPriority = false)
+		Operation(MyContainer* owner, string name, shared_ptr<MyContainer> module, bool dumm, bool isHighPriority = false, bool isLatest = false)
 			: _parent(owner), _name(name), _fullName(name),
 			container(module), _stream(c10::cuda::getStreamFromPool()),
-			highPriority(isHighPriority)
+			highPriority(isHighPriority), isLatest(isLatest)
 		{
 		}
 
@@ -82,7 +86,7 @@ namespace FGPRS
 		Tensor scheduleMISOSync(vector<Tensor> input);
 
 		double getRegulatedExecutionTime(int contextIndex);
-		void setAbsoluteDeadline(int level, steady_clock::time_point start);
+		void setAbsoluteDeadline(int level, steady_clock::time_point start, int bias);
 	};
 }
 

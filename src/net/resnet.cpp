@@ -62,12 +62,12 @@ struct BasicBlock : public MyContainer
 		if ((groups != 1) || (base_width != 64))
 		{
 			throw invalid_argument{
-				"BasicBlock only supports groups=1 and base_width=64"};
+				"BasicBlock only supports groups=1 and base_width=64" };
 		}
 		if (dilation > 1)
 		{
 			throw invalid_argument{
-				"Dilation > 1 not supported in BasicBlock"};
+				"Dilation > 1 not supported in BasicBlock" };
 		}
 		m_conv1 =
 			register_module("conv1", Conv2d{ create_conv3x3_options(
@@ -177,9 +177,9 @@ struct BasicBlock : public MyContainer
 		level -= 1;
 		cout << "Or here?\n";
 
-		contextData[level].resize(Scheduler::smOptions.size());
+		contextData[level].resize(Scheduler::contextCount);
 
-		for (int i = 0; i < Scheduler::smOptions.size(); i++)
+		for (int i = 0; i < Scheduler::contextCount; i++)
 		{
 			contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 
@@ -210,6 +210,8 @@ struct BasicBlock : public MyContainer
 		usedDeadline += o_conv1->relativeDeadline[level];
 		deadlineStack += o_conv1->relativeDeadline[level];
 		o_conv1->stackedDeadline[level] = deadlineStack;
+
+		// o_conv1->_parent->deadlineLogger->info("encoder->aspp->aspppooling-: {:.0f}", o_aspppooling->relativeDeadline[level]);
 
 		// cout << o_conv1->getFullName() << ": " << o_conv1->relativeDeadline[level] << "-->" << o_conv1->stackedDeadline[level] << endl;
 
@@ -370,9 +372,9 @@ struct Bottleneck : public MyContainer
 	{
 		double tempStack = 0;
 		level -= 1;
-		contextData[level].resize(Scheduler::smOptions.size());
+		contextData[level].resize(Scheduler::contextCount);
 
-		for (int i = 0; i < Scheduler::smOptions.size(); i++)
+		for (int i = 0; i < Scheduler::contextCount; i++)
 		{
 			contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 
@@ -461,7 +463,7 @@ struct ResNet : public MyContainer
 		{
 			throw invalid_argument{
 				"replace_stride_with_dilation should be empty or have exactly "
-					"three elements."};
+					"three elements." };
 		}
 
 		m_groups = m_groups;
@@ -504,7 +506,7 @@ struct ResNet : public MyContainer
 		m_fc = register_module(
 			"fc", Linear(512 * Block::m_expansion, num_classes));
 
-		// m_layerX = XSequential(512 * Block::m_expansion, num_classes);
+		m_layerX = XSequential(512 * Block::m_expansion, num_classes);
 
 		for (auto m : modules(false))
 		{
@@ -566,10 +568,11 @@ struct ResNet : public MyContainer
 	AdaptiveAvgPool2d m_avgpool{ nullptr };
 	Linear m_fc{ nullptr };
 	MySequential m_layer0{ nullptr };
-	// XSequential m_layerX;
+	XSequential m_layerX;
 
 	// shared_ptr<Operation> o_conv1, o_bn1, o_relu, o_maxpool, o_layer1, o_layer2, o_layer3, o_layer4, o_avgpool, o_fc;
-	shared_ptr<Operation> o_layer0, o_layer1, o_layer2, o_layer3, o_layer4, o_avgpool, o_fc;//o_layerX;
+	// shared_ptr<Operation> o_layer0, o_layer1, o_layer2, o_layer3, o_layer4, o_avgpool, o_fc;
+	shared_ptr<Operation> o_layer0, o_layer1, o_layer2, o_layer3, o_layer4, o_layerX;
 
 	MySequential _make_layer(int64_t planes, int64_t blocks,
 		int64_t stride = 1, bool dilate = false)
@@ -667,11 +670,11 @@ struct ResNet : public MyContainer
 			input = m_layer4.schedule(input, level);
 		}
 
-		input = o_avgpool->scheduleSync(input);
-		input = flatten(input, 1);
-		input = o_fc->scheduleSync(input);
+		// input = o_avgpool->scheduleSync(input);
+		// input = flatten(input, 1);
+		// input = o_fc->scheduleSync(input);
 
-		// input = o_layerX->scheduleSync(input);
+		input = o_layerX->scheduleSync(input);
 
 		return input;
 	}
@@ -696,7 +699,7 @@ struct ResNet : public MyContainer
 		o_layer3 = addOperation(this, "layer3", m_layer3.ptr(), 3);
 
 		// copyOperations("layer4", m_layer4, 3);
-		o_layer4 = addOperation(this, "layer4", m_layer4.ptr(), 3);
+		o_layer4 = addOperation(this, "layer4", m_layer4.ptr(), 3, true);
 
 		// m_layerX = MySequential(o_avgpool, o_fc);
 		// o_layerX = addOperation(this, "layerX", m_layerX.ptr(), 3);
@@ -709,11 +712,12 @@ struct ResNet : public MyContainer
 		// 		return x;
 		// 		})
 		// };
-		// auto temp = make_shared<XSequential>(m_layerX);
-		// o_layerX = addOperation(this, "layerX", temp, 3);
 
-		o_avgpool = addOperation(this, "avgpool", m_avgpool.ptr());
-		o_fc = addOperation(this, "fc", m_fc.ptr());
+		auto temp = make_shared<XSequential>(m_layerX);
+		o_layerX = addOperation(this, "layerX", temp, 3, true, true);
+
+		// o_avgpool = addOperation(this, "avgpool", m_avgpool.ptr(), 3, true);
+		// o_fc = addOperation(this, "fc", m_fc.ptr(), 3, true);
 	}
 
 	Tensor analyze(int warmup, int repeat, Tensor input, int level)
@@ -741,11 +745,11 @@ struct ResNet : public MyContainer
 			input = m_layer4.analyze(warmup, repeat, input, level);
 		}
 
-		input = o_avgpool->analyze(warmup, repeat, input);
-		input = flatten(input, 1);
-		input = o_fc->analyze(warmup, repeat, input);
+		// input = o_avgpool->analyze(warmup, repeat, input);
+		// input = flatten(input, 1);
+		// input = o_fc->analyze(warmup, repeat, input);
 
-		// input = o_layerX->analyze(warmup, repeat, input);
+		input = o_layerX->analyze(warmup, repeat, input);
 
 		return input;
 	}
@@ -759,9 +763,9 @@ struct ResNet : public MyContainer
 
 		level -= 1;
 
-		contextData[level].resize(Scheduler::smOptions.size());
+		contextData[level].resize(Scheduler::contextCount);
 
-		for (int i = 0; i < Scheduler::smOptions.size(); i++)
+		for (int i = 0; i < Scheduler::contextCount; i++)
 		{
 			contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 
@@ -785,7 +789,7 @@ struct ResNet : public MyContainer
 		tempStack += m_layer3.assignExecutionTime(level + 1, contextIndex, 0);
 		tempStack += m_layer4.assignExecutionTime(level + 1, contextIndex, 0);
 
-		for (int i = 0; i < Scheduler::smOptions.size(); i++)
+		for (int i = 0; i < Scheduler::contextCount; i++)
 		{
 			// contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
 
@@ -797,16 +801,16 @@ struct ResNet : public MyContainer
 			contextData[level][i].stackExecutionTime(m_layer3.contextData[level][i]);
 			contextData[level][i].stackExecutionTime(m_layer4.contextData[level][i]);
 
-			// contextData[level][i].stackExecutionTime(o_layerX->contextData[i]);
+			contextData[level][i].stackExecutionTime(o_layerX->contextData[i]);
 
-			contextData[level][i].stackExecutionTime(o_avgpool->contextData[i]);
-			contextData[level][i].stackExecutionTime(o_fc->contextData[i]);
+			// contextData[level][i].stackExecutionTime(o_avgpool->contextData[i]);
+			// contextData[level][i].stackExecutionTime(o_fc->contextData[i]);
 		}
 
-		tempStack += o_avgpool->getRegulatedExecutionTime(contextIndex);
-		tempStack += o_fc->getRegulatedExecutionTime(contextIndex);
+		// tempStack += o_avgpool->getRegulatedExecutionTime(contextIndex);
+		// tempStack += o_fc->getRegulatedExecutionTime(contextIndex);
 
-		// tempStack += o_layerX->getRegulatedExecutionTime(contextIndex);
+		tempStack += o_layerX->getRegulatedExecutionTime(contextIndex);
 
 		regulatedExecutionTime[level] = tempStack;
 		return executionTimeStack + tempStack;
@@ -874,24 +878,24 @@ struct ResNet : public MyContainer
 		usedDeadline += tempDeadline;
 		deadlineStack += tempDeadline;
 
-		o_avgpool->relativeDeadline[level] = o_avgpool->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
-		usedDeadline += o_avgpool->relativeDeadline[level];
-		deadlineStack += o_avgpool->relativeDeadline[level];
-		o_avgpool->stackedDeadline[level] = deadlineStack;
+		// o_avgpool->relativeDeadline[level] = o_avgpool->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
+		// usedDeadline += o_avgpool->relativeDeadline[level];
+		// deadlineStack += o_avgpool->relativeDeadline[level];
+		// o_avgpool->stackedDeadline[level] = deadlineStack;
 
 		// // cout << o_avgpool->getFullName() << ": " << o_avgpool->relativeDeadline[level] << "-->" << o_avgpool->stackedDeadline[level] << endl;
 
-		o_fc->relativeDeadline[level] = o_fc->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
-		usedDeadline += o_fc->relativeDeadline[level];
-		deadlineStack += o_fc->relativeDeadline[level];
-		o_fc->stackedDeadline[level] = deadlineStack;
+		// o_fc->relativeDeadline[level] = o_fc->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
+		// usedDeadline += o_fc->relativeDeadline[level];
+		// deadlineStack += o_fc->relativeDeadline[level];
+		// o_fc->stackedDeadline[level] = deadlineStack;
 
 		// // cout << o_fc->getFullName() << ": " << o_fc->relativeDeadline[level] << "-->" << o_fc->stackedDeadline[level] << endl;
 
-		// o_layerX->relativeDeadline[level] = o_layerX->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
-		// usedDeadline += o_layerX->relativeDeadline[level];
-		// deadlineStack += o_layerX->relativeDeadline[level];
-		// o_layerX->stackedDeadline[level] = deadlineStack;
+		o_layerX->relativeDeadline[level] = o_layerX->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
+		usedDeadline += o_layerX->relativeDeadline[level];
+		deadlineStack += o_layerX->relativeDeadline[level];
+		o_layerX->stackedDeadline[level] = deadlineStack;
 
 		return deadlineStack;
 	}
@@ -915,7 +919,7 @@ resnet18(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
 	vector<int64_t> replace_stride_with_dilation = {})
 {
-	const vector<int64_t> layers{2, 2, 2, 2};
+	const vector<int64_t> layers{ 2, 2, 2, 2 };
 	shared_ptr<ResNet<BasicBlock>> model =
 		_resnet<BasicBlock>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
@@ -927,7 +931,7 @@ resnet34(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
 	vector<int64_t> replace_stride_with_dilation = {})
 {
-	const vector<int64_t> layers{3, 4, 6, 3};
+	const vector<int64_t> layers{ 3, 4, 6, 3 };
 	shared_ptr<ResNet<BasicBlock>> model =
 		_resnet<BasicBlock>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
@@ -939,7 +943,7 @@ resnet50(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
 	vector<int64_t> replace_stride_with_dilation = {})
 {
-	const vector<int64_t> layers{3, 4, 6, 3};
+	const vector<int64_t> layers{ 3, 4, 6, 3 };
 	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
@@ -951,7 +955,7 @@ resnet101(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
 	vector<int64_t> replace_stride_with_dilation = {})
 {
-	const vector<int64_t> layers{3, 4, 23, 3};
+	const vector<int64_t> layers{ 3, 4, 23, 3 };
 	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
@@ -963,7 +967,7 @@ resnet152(int64_t num_classes = 1000, bool zero_init_residual = false,
 	int64_t groups = 1, int64_t width_per_group = 64,
 	vector<int64_t> replace_stride_with_dilation = {})
 {
-	const vector<int64_t> layers{3, 8, 36, 3};
+	const vector<int64_t> layers{ 3, 8, 36, 3 };
 	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
@@ -977,7 +981,7 @@ resnext50_32x4d(int64_t num_classes = 1000, bool zero_init_residual = false,
 {
 	groups = 32;
 	width_per_group = 4;
-	const vector<int64_t> layers{3, 4, 6, 3};
+	const vector<int64_t> layers{ 3, 4, 6, 3 };
 	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
@@ -991,7 +995,7 @@ resnext101_32x8d(int64_t num_classes = 1000, bool zero_init_residual = false,
 {
 	groups = 32;
 	width_per_group = 8;
-	const vector<int64_t> layers{3, 4, 23, 3};
+	const vector<int64_t> layers{ 3, 4, 23, 3 };
 	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
@@ -1004,7 +1008,7 @@ wide_resnet50_2(int64_t num_classes = 1000, bool zero_init_residual = false,
 	vector<int64_t> replace_stride_with_dilation = {})
 {
 	width_per_group = 64 * 2;
-	const vector<int64_t> layers{3, 4, 6, 3};
+	const vector<int64_t> layers{ 3, 4, 6, 3 };
 	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);
@@ -1017,7 +1021,7 @@ wide_resnet101_2(int64_t num_classes = 1000, bool zero_init_residual = false,
 	vector<int64_t> replace_stride_with_dilation = {})
 {
 	width_per_group = 64 * 2;
-	const vector<int64_t> layers{3, 4, 23, 3};
+	const vector<int64_t> layers{ 3, 4, 23, 3 };
 	shared_ptr<ResNet<Bottleneck>> model =
 		_resnet<Bottleneck>(layers, num_classes, zero_init_residual, groups,
 			width_per_group, replace_stride_with_dilation);

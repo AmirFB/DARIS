@@ -32,10 +32,10 @@ namespace FGPRS
 		vector<c10::cuda::CUDAStream> _streams;
 
 	public:
-		bool busy = false;
 		unsigned smCount;
 		int index = -1;
-		vector<Operation*> queue;// = vector<Operation*>(0);
+		vector<Operation*> queue;
+		int maxParallel = 0;
 
 		MyContext() {}
 		MyContext(unsigned, int, bool = false);
@@ -46,8 +46,11 @@ namespace FGPRS
 		static bool selectDefault();
 		bool release();
 		void lock();
+		void lock(Operation* operation);
 		void unlock();
+		void unlock(Operation* operation);
 		bool isEmpty();
+		bool hasCapacity();
 
 		void queueOperation(Operation* operation);
 		void dequeueOperation(Operation* operation);

@@ -38,6 +38,7 @@ namespace FGPRS
 		double deadlineQuota, regulatedExecutionTime[3];
 		MyContainer* owner;
 		int missed = 0, meets = 0;
+		bool delayed = false;
 
 		vector<shared_ptr<MyContainer>> containers;
 		int _maxLevel = 0;
@@ -52,6 +53,7 @@ namespace FGPRS
 		MyContainer(const MyContainer& container) : Module(container) {}
 
 		void initLoggers(string name);
+		void clearAnalyzeLogger(string name);
 		void clearScheduleLogger(string name);
 
 		virtual void assignOperations() {}
@@ -83,13 +85,13 @@ namespace FGPRS
 
 		void assignDeadline(double quota, int contextIndex);
 		virtual double assignDeadline(double quota, int level, int contextIndex, double deadlineStack);
-		virtual void setAbsoluteDeadline(int level, steady_clock::time_point start);
+		virtual void setAbsoluteDeadline(int level, steady_clock::time_point start, int bias = 0);
 
 		template <typename ModuleType>
 		shared_ptr<Operation> addOperation(MyContainer* owner, string name, shared_ptr<ModuleType> module,
-			int level = 0, bool isHighPriority = false)
+			int level = 0, bool isHighPriority = false, bool isLatest = false)
 		{
-			auto operation = make_shared<Operation>(owner, name, module, isHighPriority);
+			auto operation = make_shared<Operation>(owner, name, module, isHighPriority, isLatest);
 
 			if (level == 0 || level == 1)
 				operations[0].push_back(operation);
@@ -105,7 +107,7 @@ namespace FGPRS
 
 		template <typename ModuleType>
 		shared_ptr<Operation> addOperationSIMO(MyContainer* owner, string name, shared_ptr<ModuleType> module,
-			int level = 0, bool isHighPriority = false)
+			int level = 0, bool isHighPriority = false, bool isLatest = false)
 		{
 			auto operation = make_shared<Operation>(owner, name, module, false, isHighPriority);
 

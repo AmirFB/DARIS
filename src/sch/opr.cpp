@@ -4,8 +4,9 @@
 # include <schd.hpp>
 
 # include <torch/torch.h>
-#include <c10/cuda/CUDAStream.h>
+# include <c10/cuda/CUDAStream.h>
 # include <cuda_runtime_api.h>
+# include <nvToolsExt.h>
 
 # include <chrono>
 # include <iostream>
@@ -26,6 +27,7 @@ void Operation::setName(string name)
 {
 	_name = name;
 	_fullName = name;
+	strcpy(_cName, _fullName.c_str());
 }
 
 void Operation::setParentName(string parentName)
@@ -34,11 +36,13 @@ void Operation::setParentName(string parentName)
 	{
 		_fullName = parentName + "->" + _fullName;
 		_lastParentName = parentName;
+		strcpy(_cName, _fullName.c_str());
 	}
 }
 
 Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 {
+	auto mainId = nvtxRangeStartA(_fullName.c_str());
 	NoGradGuard no_grad;
 	Tensor output;
 	bool first = true;
@@ -49,51 +53,86 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 	isolatedScalability = 0;
 	occupiedScalability = 0;
 
+	// cout << _fullName << ":" << endl;
 	_parent->analyzeLogger->info("{}:", _fullName);
-
-	MyContext::selectDefault();
 	contextData.clear();
 
 	tStart = steady_clock::now();
 	tEnd = tStart + milliseconds(warmup);
+	auto rangeId = nvtxRangeStartA("warmup");
 
-	for (int i = 0; i < warmup; i++)
-		output = sequential->forward(input);
-
-	for (auto sm : Scheduler::smOptions)
+	for (int i = Scheduler::smOptions.size() - 1; i >= 0; i--)
 	{
-		auto ctx = Scheduler::selectContext(sm);
+		auto sm = Scheduler::smOptions[i];
+		auto ctx = Scheduler::selectContextByIndex(i);
 		ctx->select();
+
+		_stream = at::cuda::getStreamFromPool(highPriority, ctx->index);
+		at::cuda::setCurrentCUDAStream(_stream);
+
+		for (int i = 0; i < warmup; i++)
+		{
+			output = sequential->forward(input);
+			_stream.synchronize();
+		}
+
+		cuCtxSynchronize();
+		ctx->release();
+	}
+
+	nvtxRangeEnd(rangeId);
+
+	for (int i = 0; i < Scheduler::contextCount; i++)
+	{
+		auto sm = Scheduler::smOptions[i];
+		auto ctx = Scheduler::selectContextByIndex(i);
+		ctx->select();
+		_stream = at::cuda::getStreamFromPool(highPriority, ctx->index);
+		at::cuda::setCurrentCUDAStream(_stream);
+		rangeId = nvtxRangeStartA((to_string(sm) + " SMs(iso)").c_str());
 
 		tStart = steady_clock::now();
 
 		for (int i = 0; i < repeat; i++)
+		{
 			output = sequential->forward(input);
+			_stream.synchronize();
+		}
 
+		cuCtxSynchronize();
 		tNow = steady_clock::now();
+		nvtxRangeEnd(rangeId);
 
 		duration<double> d1 = tNow - tStart;
 
 		ctx->release();
 		Scheduler::startDummy(ctx);
-		usleep(1000);
+		usleep(5000);
 		ctx->select();
 
 		countOccupied = 0;
-		tStart = steady_clock::now();
-		tEnd = tStart + milliseconds(repeat);
+		// tStart = steady_clock::now();
+		// tEnd = steady_clock::now() + milliseconds(repeat);
 
+		rangeId = nvtxRangeStartA((to_string(sm) + " SMs(occ)").c_str());
 		tStart = steady_clock::now();
 
 		for (int i = 0; i < repeat; i++)
+		{
 			output = sequential->forward(input);
+			_stream.synchronize();
+		}
+
+		cuCtxSynchronize();
 
 		tNow = steady_clock::now();
+		nvtxRangeEnd(rangeId);
 
 		duration<double> d2 = tNow - tStart;
 
 		Scheduler::stopDummy();
 		ctx->release();
+		torch::cuda::synchronize();
 
 		contextData.push_back(ContextData(ctx, d1.count() / repeat * 1000000, d2.count() / repeat * 1000000));
 		_parent->analyzeLogger->info("\t{}\t{:.0f}us, {:.0f}us",
@@ -123,14 +162,19 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 
 		isolatedScalability += max((isolatedGain - 1) / (desired - 1), 0.0);
 		occupiedScalability += max((occupiedGain - 1) / (desired - 1), 0.0);
+		// cout << "\t" << ctx->smCount << "\t" << contextData.back().isolatedExecutionTime << "us"
+		// 	<< ", " << contextData.back().occupiedExecutionTime << "us";
 	}
 
 	predictability /= 4;
 	isolatedScalability /= 3;
 	occupiedScalability /= 3;
-
+	// cout << endl
+	// 	<< "Params: " << predictability << "\t" << isolatedScalability << "\t" << occupiedScalability << endl
+	// 	<< endl;
 	_parent->analyzeLogger->info("Params: {:.2f}\t{:.2f}\t{:.2f}", predictability, isolatedScalability, occupiedScalability);
 
+	nvtxRangeEnd(mainId);
 	return output;
 }
 
@@ -261,28 +305,43 @@ Tensor Operation::getResult()
 }
 mutex mLock;
 
-// Tensor Operation::runSync(Tensor input, c10::cuda::CUDAStream* stream)
 Tensor Operation::runSync(Tensor input)
 {
-	// cudaStream_t strm;
-	// cudaStreamCreateWithFlags(&strm, cudaStreamNonBlocking);
-	// auto stream = c10::cuda::CUDAStream(strm);
-	// // auto stream = at::cuda::createCUDAStream();
-	// mLock.lock();
-	// mLock.unlock();
-	// std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	_stream = at::cuda::getStreamFromPool(highPriority, _chosenContext->index);
+	c10::cuda::CUDAStream::setContextIndex(_chosenContext->index);
+
+	do
+	{
+		_stream = at::cuda::getStreamFromPool(highPriority || _parent->delayed, _chosenContext->index);
+	}
+	while (_stream.isBusy());
+
+	_stream.select();
 	at::cuda::setCurrentCUDAStream(_stream);
-	return sequential->forward(input);
+
+	// cout << "Let's see: " << ((int)_stream.device_index() == _chosenContext->index) << endl;
+
+	auto id = nvtxRangeStartA(_fullName.c_str());
+	// cout << "R " << _parent->_name << ": " << _fullName << "\tindex: " << (int)_stream.device_index() << ", " << (int)_stream.id() << endl;
+	auto output = sequential->forward(input);
+	// cout << "F " << _parent->_name << ": " << _fullName << "\tindex: " << (int)_stream.device_index() << ", " << (int)_stream.id() << endl;
+	// if (highPriority || _parent->delayed)
+	_stream.synchronize();
+	// cudaStreamSynchronize(_stream.stream());
+	// cout << "S " << _parent->_name << ": " << _fullName << "\tindex: " << (int)_stream.device_index() << ", " << (int)_stream.id() << endl;
+	_stream.release();
+	nvtxRangeEnd(id);
+	return output;
 	// return input + input;
 }
 
-// vector<Tensor> Operation::runSIMOSync(Tensor input, c10::cuda::CUDAStream* stream)
 vector<Tensor> Operation::runSIMOSync(Tensor input)
 {
 	_stream = at::cuda::getStreamFromPool(highPriority, _chosenContext->index);
 	at::cuda::setCurrentCUDAStream(_stream);
-	return container->forwardSIMO(input);
+	auto id = nvtxRangeStartA((_parent->_name + "-->" + _fullName).c_str());
+	auto output = container->forwardSIMO(input);
+	nvtxRangeEnd(id);
+	return output;
 }
 
 void Operation::startSchedule(Tensor* input)
@@ -321,7 +380,87 @@ Tensor Operation::scheduleSync(Tensor input)
 		_isException = true;
 		_chosenContext = Scheduler::selectDefaultContext();
 		_chosenContext->queueOperation(this);
-		_chosenContext->lock();
+		_chosenContext->lock(this);
+	}
+
+	else
+	{
+		_isException = false;
+
+		if (!isLatest && !Scheduler::anyEmptyContext())
+		{
+			// cout << "name: " << _parent->_name << "->" << _fullName << "\t(Let's SLEEP!!!)" << endl;
+			this_thread::sleep_until(earliestTime);
+		}
+
+		// if (!highPriority && Scheduler::anyEmptyContext() && (steady_clock::now() < earliestTime))
+		{
+			// cout << "name: " << _parent->_name << "->" << _fullName << "\t(There is empty so let\'s go!)" << endl;
+			// _parent->scheduleLogger->info("Skipped: {}", _fullName.c_str());
+
+			// cout << "earliestTime: " << duration_cast<microseconds>(earliestTime - steady_clock::now()).count() << endl;
+			// cout << "earliestTime: " << earliestTime.time_since_epoch().count() << endl;
+			// cout << "now: " << steady_clock::now().time_since_epoch().count() << endl;
+			// cout << endl;
+		}
+
+		_chosenContext = Scheduler::getMinimalContext(this);
+		// _chosenContext = Scheduler::getFastestContext(this);
+	}
+
+	_chosenContext->select();
+
+	_parent->scheduleLogger->info("Start  {}: {} SMs -> {}",
+		_fullName.c_str(), _chosenContext->smCount, queueCount);
+
+	// _parent->scheduleLogger->info("Start  {}: {} SMs -> {}\t\t\tMemory Before: {}GB",
+	// 	_fullName.c_str(), _chosenContext->smCount, _chosenContext->queue.size(), Scheduler::getFreeMemoryGB());
+
+	input = runSync(input);
+
+	_parent->scheduleLogger->info(
+		"End    {}: {} ({})-> {} + {} = {} ({})",
+		_fullName.c_str(),
+		(int)contextData[_chosenContext->index].occupiedExecutionTime,
+		duration_cast<microseconds>(finishTime - startTime).count(),
+		duration_cast<microseconds>(steady_clock::now() - startTime).count(),
+		duration_cast<microseconds>(absoluteDeadline - steady_clock::now()).count(),
+		duration_cast<microseconds>(absoluteDeadline - startTime).count(),
+		(long)relativeDeadline[2]);
+
+	// _parent->scheduleLogger->info(
+	// 	"End    {}: {} -> {} + {} = {} ({})\t\t\tMemory  After: {}GB",
+	// 	_fullName.c_str(),
+	// 	(int)contextData[_chosenContext->index].occupiedExecutionTime,
+	// 	duration_cast<microseconds>(steady_clock::now() - startTime).count(),
+	// 	duration_cast<microseconds>(absoluteDeadline - steady_clock::now()).count(),
+	// 	duration_cast<microseconds>(absoluteDeadline - startTime).count(),
+	// 	(long)relativeDeadline[2], Scheduler::getFreeMemoryGB());
+
+	if (steady_clock::now() > absoluteDeadline)
+		_parent->delayed = true;
+
+	else
+		_parent->delayed = false;
+
+	mLock.lock();
+	_chosenContext->dequeueOperation(this);
+	_chosenContext->unlock(this);
+	mLock.unlock();
+
+	return input;
+}
+
+vector<Tensor> Operation::scheduleSIMOSync(Tensor input)
+{
+	startTime = steady_clock::now();
+
+	if (false)//occupiedScalability < exceptionThreshold)
+	{
+		_isException = true;
+		_chosenContext = Scheduler::selectDefaultContext();
+		_chosenContext->queueOperation(this);
+		_chosenContext->lock(this);
 	}
 
 	else
@@ -339,74 +478,29 @@ Tensor Operation::scheduleSync(Tensor input)
 	// _parent->scheduleLogger->info("Start  {}: {} SMs -> {}\t\t\tMemory Before: {}GB",
 	// 	_fullName.c_str(), _chosenContext->smCount, _chosenContext->queue.size(), Scheduler::getFreeMemoryGB());
 
-	input = runSync(input);
-
-	// _parent->scheduleLogger->info(
-	// 	"End    {}: {} ({})-> {} + {} = {} ({})",
-	// 	_fullName.c_str(),
-	// 	(int)contextData[_chosenContext->index].occupiedExecutionTime,
-	// 	duration_cast<microseconds>(finishTime - startTime).count(),
-	// 	duration_cast<microseconds>(steady_clock::now() - startTime).count(),
-	// 	duration_cast<microseconds>(absoluteDeadline - steady_clock::now()).count(),
-	// 	duration_cast<microseconds>(absoluteDeadline - startTime).count(),
-	// 	(long)relativeDeadline[2]);
-
-	_parent->scheduleLogger->info(
-		"End    {}: {} -> {} + {} = {} ({})\t\t\tMemory  After: {}GB",
-		_fullName.c_str(),
-		(int)contextData[_chosenContext->index].occupiedExecutionTime,
-		duration_cast<microseconds>(steady_clock::now() - startTime).count(),
-		duration_cast<microseconds>(absoluteDeadline - steady_clock::now()).count(),
-		duration_cast<microseconds>(absoluteDeadline - startTime).count(),
-		(long)relativeDeadline[2], Scheduler::getFreeMemoryGB());
-
-	// _chosenContext->release();
-	mLock.lock();
-	_chosenContext->dequeueOperation(this);
-	_chosenContext->unlock();
-	mLock.unlock();
-
-	return input;
-}
-
-vector<Tensor> Operation::scheduleSIMOSync(Tensor input)
-{
-	startTime = steady_clock::now();
-
-	if (false)//occupiedScalability < exceptionThreshold)
-	{
-		_isException = true;
-		_chosenContext = Scheduler::selectDefaultContext();
-		_chosenContext->queueOperation(this);
-		_chosenContext->lock();
-	}
-
-	else
-	{
-		_isException = false;
-		_chosenContext = Scheduler::getMinimalContext(this);
-		// _chosenContext = Scheduler::getFastestContext(this);
-	}
-
-	_chosenContext->select();
-
-	_parent->scheduleLogger->info("Start  {}: {} SMs -> {}\t\t\tMemory Before: {}GB",
-		_fullName.c_str(), _chosenContext->smCount, _chosenContext->queue.size(), Scheduler::getFreeMemoryGB());
-
 	auto output = runSIMOSync(input);
 
 	_parent->scheduleLogger->info(
-		"End    {}: {} -> {} + {} = {} ({})\t\t\tMemory  After: {}GB",
+		"End    {}: {} -> {} + {} = {} ({})",
 		_fullName.c_str(),
 		(int)contextData[_chosenContext->index].occupiedExecutionTime,
 		duration_cast<microseconds>(steady_clock::now() - startTime).count(),
 		duration_cast<microseconds>(absoluteDeadline - steady_clock::now()).count(),
 		duration_cast<microseconds>(absoluteDeadline - startTime).count(),
-		(long)relativeDeadline[2], Scheduler::getFreeMemoryGB());
+		(long)relativeDeadline[2]);
+
+	// _parent->scheduleLogger->info(
+	// 	"End    {}: {} -> {} + {} = {} ({})\t\t\tMemory  After: {}GB",
+	// 	_fullName.c_str(),
+	// 	(int)contextData[_chosenContext->index].occupiedExecutionTime,
+	// 	duration_cast<microseconds>(steady_clock::now() - startTime).count(),
+	// 	duration_cast<microseconds>(absoluteDeadline - steady_clock::now()).count(),
+	// 	duration_cast<microseconds>(absoluteDeadline - startTime).count(),
+	// 	(long)relativeDeadline[2], Scheduler::getFreeMemoryGB());
 
 	_chosenContext->release();
 	_chosenContext->dequeueOperation(this);
-	_chosenContext->unlock();
+	_chosenContext->unlock(this);
 
 	return output;
 }
@@ -416,9 +510,11 @@ double Operation::getRegulatedExecutionTime(int contextIndex)
 	return contextData[contextIndex].occupiedExecutionTime;// *max(1 - occupiedScalability, 0.25);
 }
 
-void Operation::setAbsoluteDeadline(int level, steady_clock::time_point start)
+void Operation::setAbsoluteDeadline(int level, steady_clock::time_point start, int bias)
 {
-	absoluteDeadline = start + microseconds((int)stackedDeadline[level - 1]);
+	absoluteDeadline = start + microseconds((int)stackedDeadline[level - 1] + bias);
+	earliestTime = absoluteDeadline - microseconds((int)relativeDeadline[level - 1] * 2);
 	// cout << level << endl;
 	// cout << getFullName() << "->" << stackedDeadline[level - 1] << endl;
+
 }
