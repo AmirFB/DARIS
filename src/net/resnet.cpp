@@ -153,20 +153,20 @@ struct BasicBlock : public MyContainer
 		o_relu2 = addOperation(this, "relu", m_relu.ptr());
 	}
 
-	Tensor analyze(int warmup, int repeat, Tensor input, int level)
+	Tensor analyze(int warmup, int repeat, Tensor input, int index, int level)
 	{
 		Tensor output;
 
-		output = o_conv1->analyze(warmup, repeat, input);
-		output = o_bn1->analyze(warmup, repeat, output);
-		output = o_relu1->analyze(warmup, repeat, output);
-		output = o_conv2->analyze(warmup, repeat, output);
+		output = o_conv1->analyze(warmup, repeat, input, index);
+		output = o_bn1->analyze(warmup, repeat, output, index);
+		output = o_relu1->analyze(warmup, repeat, output, index);
+		output = o_conv2->analyze(warmup, repeat, output, index);
 
 		if (!m_downsample->is_empty())
-			input = o_downsample->analyze(warmup, repeat, input);
+			input = o_downsample->analyze(warmup, repeat, input, index);
 
 		output += input;
-		output = o_relu2->analyze(warmup, repeat, output);
+		output = o_relu2->analyze(warmup, repeat, output, index);
 
 		return output;
 	}
@@ -344,26 +344,26 @@ struct Bottleneck : public MyContainer
 		o_relu3 = addOperation(this, "relu", m_relu.ptr());
 	}
 
-	Tensor analyze(int warmup, int repeat, Tensor input, int level)
+	Tensor analyze(int warmup, int repeat, Tensor input, int index, int level)
 	{
 		Tensor output;
 
-		output = o_conv1->analyze(warmup, repeat, input);
-		output = o_bn1->analyze(warmup, repeat, output);
-		output = o_relu1->analyze(warmup, repeat, output);
+		output = o_conv1->analyze(warmup, repeat, input, index);
+		output = o_bn1->analyze(warmup, repeat, output, index);
+		output = o_relu1->analyze(warmup, repeat, output, index);
 
-		output = o_conv2->analyze(warmup, repeat, output);
-		output = o_bn2->analyze(warmup, repeat, output);
-		output = o_relu2->analyze(warmup, repeat, output);
+		output = o_conv2->analyze(warmup, repeat, output, index);
+		output = o_bn2->analyze(warmup, repeat, output, index);
+		output = o_relu2->analyze(warmup, repeat, output, index);
 
-		output = o_conv3->analyze(warmup, repeat, output);
-		output = o_bn3->analyze(warmup, repeat, output);
+		output = o_conv3->analyze(warmup, repeat, output, index);
+		output = o_bn3->analyze(warmup, repeat, output, index);
 
 		if (!m_downsample->is_empty())
-			input = o_downsample->analyze(warmup, repeat, input);
+			input = o_downsample->analyze(warmup, repeat, input, index);
 
 		output += input;
-		output = o_relu3->analyze(warmup, repeat, output);
+		output = o_relu3->analyze(warmup, repeat, output, index);
 
 		return output;
 	}
@@ -496,9 +496,9 @@ struct ResNet : public MyContainer
 		m_layer3 = register_module("layer3", layer);
 		m_layer3.copyOperations("layer3", layer);
 
-		layer = _make_layer(512, layers.at(3), 2, replace_stride_with_dilation.at(2));
+		layer = _make_layer(512, layers.at(3), 2, replace_stride_with_dilation.at(2), true);
 		m_layer4 = register_module("layer4", layer);
-		m_layer4.copyOperations("layer4", layer);
+		m_layer4.copyOperations("layer4", layer, true);
 
 		m_avgpool = register_module(
 			"avgpool", AdaptiveAvgPool2d(
@@ -575,7 +575,7 @@ struct ResNet : public MyContainer
 	shared_ptr<Operation> o_layer0, o_layer1, o_layer2, o_layer3, o_layer4, o_layerX;
 
 	MySequential _make_layer(int64_t planes, int64_t blocks,
-		int64_t stride = 1, bool dilate = false)
+		int64_t stride = 1, bool dilate = false, bool highPriority = false)
 	{
 		MySequential downsample = MySequential();
 		int64_t previous_dilation = m_dilation;
@@ -602,7 +602,7 @@ struct ResNet : public MyContainer
 
 		block.assignOperations();
 		layers.copyOperations("block1", block, 2);
-		layers.addOperation(this, "block1", make_shared<Block>(block), 2);
+		layers.addOperation(this, "block1", make_shared<Block>(block), 2, highPriority);
 		layers.addContainer(make_shared<Block>(block));
 
 		m_inplanes = planes * Block::m_expansion;
@@ -616,7 +616,7 @@ struct ResNet : public MyContainer
 			layers->push_back(block);
 			block.assignOperations();
 			layers.copyOperations("block" + to_string(i + 2), block, 2);
-			layers.addOperation(this, "block" + to_string(i + 2), make_shared<Block>(block), 2);
+			layers.addOperation(this, "block" + to_string(i + 2), make_shared<Block>(block), 2, highPriority);
 			layers.addContainer(make_shared<Block>(block));
 		}
 
@@ -720,36 +720,36 @@ struct ResNet : public MyContainer
 		// o_fc = addOperation(this, "fc", m_fc.ptr(), 3, true);
 	}
 
-	Tensor analyze(int warmup, int repeat, Tensor input, int level)
+	Tensor analyze(int warmup, int repeat, Tensor input, int index, int level)
 	{
-		// input = o_conv1->analyze(warmup, repeat, input);
-		// input = o_bn1->analyze(warmup, repeat, input);
-		// input = o_relu->analyze(warmup, repeat, input);
-		// input = o_maxpool->analyze(warmup, repeat, input);
+		// input = o_conv1->analyze(warmup, repeat, input, index);
+		// input = o_bn1->analyze(warmup, repeat, input, index);
+		// input = o_relu->analyze(warmup, repeat, input, index);
+		// input = o_maxpool->analyze(warmup, repeat, input, index);
 
-		input = o_layer0->analyze(warmup, repeat, input);
+		input = o_layer0->analyze(warmup, repeat, input, index);
 
 		if (level == 3)
 		{
-			input = o_layer1->analyze(warmup, repeat, input);
-			input = o_layer2->analyze(warmup, repeat, input);
-			input = o_layer3->analyze(warmup, repeat, input);
-			input = o_layer4->analyze(warmup, repeat, input);
+			input = o_layer1->analyze(warmup, repeat, input, index);
+			input = o_layer2->analyze(warmup, repeat, input, index);
+			input = o_layer3->analyze(warmup, repeat, input, index);
+			input = o_layer4->analyze(warmup, repeat, input, index);
 		}
 
 		else
 		{
-			input = m_layer1.analyze(warmup, repeat, input, level);
-			input = m_layer2.analyze(warmup, repeat, input, level);
-			input = m_layer3.analyze(warmup, repeat, input, level);
-			input = m_layer4.analyze(warmup, repeat, input, level);
+			input = m_layer1.analyze(warmup, repeat, input, index, level);
+			input = m_layer2.analyze(warmup, repeat, input, index, level);
+			input = m_layer3.analyze(warmup, repeat, input, index, level);
+			input = m_layer4.analyze(warmup, repeat, input, index, level);
 		}
 
-		// input = o_avgpool->analyze(warmup, repeat, input);
+		// input = o_avgpool->analyze(warmup, repeat, input, index);
 		// input = flatten(input, 1);
-		// input = o_fc->analyze(warmup, repeat, input);
+		// input = o_fc->analyze(warmup, repeat, input, index);
 
-		input = o_layerX->analyze(warmup, repeat, input);
+		input = o_layerX->analyze(warmup, repeat, input, index);
 
 		return input;
 	}

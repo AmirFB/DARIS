@@ -112,16 +112,16 @@ Tensor DeepLabV3PlusImpl::schedule(Tensor input, int level)
 	return o_head->scheduleSync(input);
 }
 
-Tensor DeepLabV3PlusImpl::analyze(int warmup, int repeat, Tensor input, int level)
+Tensor DeepLabV3PlusImpl::analyze(int warmup, int repeat, Tensor input, int index, int level)
 {
-	auto features = o_encoder->analyzeSIMO(warmup, repeat, input);
+	auto features = o_encoder->analyzeSIMO(warmup, repeat, input, index);
 
 	// if (level == 3)
-	// 	input = o_decoder->analyze(warmup, repeat, input);
+	// 	input = o_decoder->analyze(warmup, repeat, input, index);
 
 	// else
-	input = m_decoder->analyzeMISO(warmup, repeat, features, level);
-	input = o_head->analyze(warmup, repeat, input);
+	input = m_decoder->analyzeMISO(warmup, repeat, features, index, level);
+	input = o_head->analyze(warmup, repeat, input, index);
 
 	return input;
 }

@@ -70,8 +70,8 @@ namespace FGPRS
 		{
 		}
 
-		Tensor analyze(int warmup, int repeat, Tensor input);
-		vector<Tensor> analyzeSIMO(int warmup, int repeat, Tensor input);
+		Tensor analyze(int warmup, int repeat, Tensor input, int index);
+		vector<Tensor> analyzeSIMO(int warmup, int repeat, Tensor input, int index);
 
 		void start(Tensor* input);
 		Tensor getResult();

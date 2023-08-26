@@ -8,13 +8,11 @@
 # include <cstdlib>
 # include <future>
 # include <sys/stat.h>
-# include <random>
+// # include <random>
 # include <ctime>
 # include <filesystem>
-# include "spdlog/spdlog.h"
+// # include "spdlog/spdlog.h"
 # include "spdlog/sinks/basic_file_sink.h"
-
-# include "nvToolsExt.h"
 
 # include <torch/torch.h>
 # include <torch/script.h>
@@ -26,6 +24,7 @@
 # include <cudaTypedefs.h>
 # include <cuda_runtime.h>
 # include <cuda_profiler_api.h>
+# include <nvToolsExt.h>
 
 # include <loop.hpp>
 # include <schd.hpp>
@@ -52,6 +51,10 @@ using namespace torch;
 using namespace torch::nn;
 using namespace FGPRS;
 
+# define PRELIMINNARY 0
+# define SCHEDULER 		1
+# define MODE					SCHEDULER
+
 shared_ptr<logger> logger;
 
 void distributeSMs(int* array, int total, int count);
@@ -61,12 +64,13 @@ double maxFPS[] = { 769, 302, 92, 473, 144, 44 };
 
 int main(int argc, char** argv)
 {
-	srand(time(nullptr));
+# if MODE == SCHEDULER
+	// srand(time(nullptr));
 	auto logger = spdlog::basic_logger_mt("main_logger", "log.log");
 	logger->set_pattern("[%S.%f] %v");
 	NoGradGuard no_grad;
-	int level = 3;
-	int moduleCount;
+	int level = 2;
+	int moduleCount, dummyCount = 0;
 	double frequency;
 
 	SchedulerType type;
@@ -74,7 +78,8 @@ int main(int argc, char** argv)
 	int smCount;
 
 	moduleCount = atoi(argv[2]);
-	frequency = atof(argv[3]);
+	dummyCount = atoi(argv[3]);
+	frequency = atof(argv[4]);
 
 	cout << "Initializing scheduler ..." << endl;
 
@@ -82,11 +87,11 @@ int main(int argc, char** argv)
 	{
 		type = PROPOSED_SCHEDULER;
 
-		smCount = atoi(argv[4]);
+		smCount = atoi(argv[5]);
 		smOptions = new int[smCount];
 
 		for (int i = 0; i < smCount; i++)
-			smOptions[i] = atoi(argv[5 + i]);
+			smOptions[i] = atoi(argv[6 + i]);
 	}
 
 	else if (!strcmp(argv[1], "mps"))
@@ -135,29 +140,39 @@ int main(int argc, char** argv)
 	filesystem::remove_all("logs");
 
 	string name;
-	int modIndex, inputSize;
+	int modIndex, inputSize = 224;
 	double freq;
-	auto quotas = generateUtilization(moduleCount, frequency);
+	// auto quotas = generateUtilization(moduleCount, frequency);
 	string freqStr;
 
 	// cudaProfilerStart();
 
+	// vector<DummyContainer> dummySet;
+
+	for (size_t i = 0; i < moduleCount; i++)
+		Scheduler::dummyContainer.push_back(DummyContainer{ mods[i], &inputs[i], i });
+
+	// random_shuffle(dummySet.begin(), dummySet.end());
+	Scheduler::dummyContainer.resize(dummyCount + 1);
+	// Scheduler::dummyContainer = vector<shared_ptr<DummyContainer>>(dummySet.begin(), dummySet.end());
+
 	for (int i = 0; i < moduleCount; i++)
 	{
 		modIndex = rand() % 1;
-		inputSize = modIndex % 3 == 0 ? 224 : (modIndex % 3 == 1 ? 512 : 1024);
 		// freq = quotas[i] * maxFPS[modIndex];
 		// freq = (i + 1) * 15 - 1;
-		freq = 80;
+		// freq = 200;
+
+		freq = 30;
 
 		stringstream stream;
 		stream << fixed << setprecision(2) << freq;
 		freqStr = stream.str();
 
 		name = (modIndex < 3 ? "resnet" : "deeplab") +
-			to_string(i + 1) + "_" + to_string(inputSize) + "_" + freqStr + "Hz";
+			to_string(i + 1);// +"_" + to_string(inputSize) + "_" + freqStr + "Hz";
 
-		cout << "\t" << setprecision(2) << name << (i + 1) << " (" << (quotas[i] / frequency * 100) << "%)" << endl;
+		// cout << "\t" << setprecision(2) << name << (i + 1) << " (" << (quotas[i] / frequency * 100) << "%)" << endl;
 
 		// inputs[i] = torch::randn({ 1, 3, 224, 224 }, kCUDA);
 		// mods[i] = resnet18(1000);
@@ -185,6 +200,7 @@ int main(int argc, char** argv)
 	cout << "Warming up ..." << endl;
 
 	// cudaProfilerStart();
+
 	for (int i = 0; i < moduleCount; i++)
 		loops[i].start(&inputs[i], type, level, false);
 
@@ -231,26 +247,35 @@ int main(int argc, char** argv)
 
 	logger->info("Finished!");
 
-	// char *op = argv[1];
-	// mkdir("results", 0777 );
+# elif MODE == PRELIMINARY
 
-	// if (!strcmp(op, "clear"))
-	// {
-	// 	cout << "Removing previous results of \"" << argv[2] << "\" simulation\n";
-	// 	remove((string("results/") + string(argv[2]) + ".csv").c_str());
-	// }
+	char* op = argv[1];
+	mkdir("results", 0777);
 
-	// else if (!strcmp(op, "speedup"))
-	// 	testSpeedup(&argv[2]);
+	if (!strcmp(op, "clear"))
+	{
+		cout << "Removing previous results of \"" << argv[2] << "\" simulation\n";
 
-	// // else if (!strcmp(op, "concurrency"))
-	// // 	testConcurrency(&argv[2]);
+		if (!strcmp(op, "concurrency"))
+		{
+			remove(string("results/concurrency1.csv").c_str());
+			remove(string("results/concurrency2.csv").c_str());
+			remove(string("results/concurrency3.csv").c_str());
+			remove(string("results/concurrency4.csv").c_str());
+			remove(string("results/concurrency5.csv").c_str());
+		}
 
-	// else if (!strcmp(op, "tailing"))
-	// 	testTailing(&argv[2]);
+		else
+			remove((string("results/") + string(argv[2]) + ".csv").c_str());
+	}
 
-	// else if (!strcmp(op, "interference"))
-	// 	testInterference(&argv[2]);
+	else if (!strcmp(op, "speedup"))
+		testSpeedup(&argv[2]);
+
+	else if (!strcmp(op, "concurrency"))
+		testConcurrency(&argv[2]);
+
+# endif
 }
 
 void distributeSMs(int* array, int total, int count)
@@ -274,21 +299,21 @@ void distributeSMs(int* array, int total, int count)
 
 vector<double> generateUtilization(int count, double total)
 {
-	vector<double> result(count);
-	random_device rd;
-	std::mt19937 gen(rd());
-	uniform_real_distribution<double> dis(0.05, 0.9);
+	// vector<double> result(count);
+	// random_device rd;
+	// std::mt19937 gen(rd());
+	// uniform_real_distribution<double> dis(0.05, 0.9);
 
-	double sum = 0;
+	// double sum = 0;
 
-	for (int i = 0; i < count; i++)
-	{
-		result[i] = dis(gen);
-		sum += result[i];
-	}
+	// for (int i = 0; i < count; i++)
+	// {
+	// 	result[i] = dis(gen);
+	// 	sum += result[i];
+	// }
 
-	for (int i = 0; i < count; i++)
-		result[i] = result[i] / sum * total;
+	// for (int i = 0; i < count; i++)
+	// 	result[i] = result[i] / sum * total;
 
-	return result;
+	// return result;
 }

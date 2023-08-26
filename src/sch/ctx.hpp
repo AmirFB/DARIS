@@ -36,6 +36,7 @@ namespace FGPRS
 		int index = -1;
 		vector<Operation*> queue;
 		int maxParallel = 0;
+		bool isBusy = false;
 
 		MyContext() {}
 		MyContext(unsigned, int, bool = false);

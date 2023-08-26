@@ -53,6 +53,7 @@ bool MyContext::initialize()
 		affinity.type = CU_EXEC_AFFINITY_TYPE_SM_COUNT;
 		affinity.param.smCount.val = smCount;
 		result &= cuCtxCreate_v3(&_context, &affinity, 1, 0, 0) == CUDA_SUCCESS;
+
 		cuInit(0);
 	}
 
@@ -63,7 +64,7 @@ bool MyContext::initialize()
 
 	result &= cuCtxGetLimit(&temp, CU_LIMIT_MALLOC_HEAP_SIZE) == CUDA_SUCCESS;
 	result &= cuCtxSetLimit(CU_LIMIT_MALLOC_HEAP_SIZE,
-		temp + (Scheduler::contextCount << 16)) == CUDA_SUCCESS;
+		temp + ((Scheduler::contextCount + 1) << 16)) == CUDA_SUCCESS;
 
 	return result;
 }
@@ -74,7 +75,7 @@ bool MyContext::select()
 	// if (_default)
 	// 	return MyContext::selectDefault();
 
-	// busy = true;
+	isBusy = true;
 	c10::cuda::CUDAStream::setContextIndex(index);
 	return cuCtxSetCurrent(_context) == CUDA_SUCCESS;
 }
@@ -86,7 +87,7 @@ bool MyContext::selectDefault()
 
 bool MyContext::release()
 {
-	// busy = false;
+	isBusy = false;
 	// return selectDefault();
 }
 

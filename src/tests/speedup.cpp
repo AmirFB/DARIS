@@ -13,10 +13,13 @@
 # include <cuda.h>
 # include <cudaTypedefs.h>
 # include <cuda_runtime.h>
+# include <nvToolsExt.h>
+# include <cuda_profiler_api.h>
 
 # include <tests.hpp>
 // # include <ctx.hpp>
 # include <schd.hpp>
+# include <resnet.hpp>
 
 using namespace std;
 using namespace chrono;
@@ -24,67 +27,66 @@ using namespace torch;
 using namespace torch::nn;
 using namespace FGPRS;
 
-# define MODULE_COUNT	8
+# define LAYER_COUNT	0
+# define MODULE_COUNT	5
+# define TOTAL_COUNT	6
+
+Sequential mod[MODULE_COUNT];
+Tensor in[MODULE_COUNT];
+auto net = resnet18(1000);
+Tensor inn = torch::randn({ 1, 3, 224, 224 }, kCUDA);
+// Tensor inl[MODULE_COUNT - LAYER_COUNT - 1];// = torch::randn({ 1, 64, 56, 56 }, kCUDA);
+
+void forward(int index)
+{
+	if (index < MODULE_COUNT)
+		mod[index]->forward(in[index]);
+
+	// else if (index < (MODULE_COUNT - 1))
+	// 	net->forwardL(inl[index - LAYER_COUNT], index - LAYER_COUNT);
+
+	else
+		net->forward(inn);
+}
 
 void testSpeedup(char** argv)
 {
 	string moduleName[] = {
-		"CV", "FC", "BN", "RL", "MP", "AP", "DP", "DA" };
+		"CV", "FC", "BN", "RL", "MP",
+		// "L0", "L1", "L2", "L3", "L4", "LX",
+		"RN" };
 	NoGradGuard no_grad;
-	Sequential mod[MODULE_COUNT];
-	Tensor in[MODULE_COUNT];
 
-	int smCount, timer;
+	int smCount, timer, index = -1;
 
 	smCount = atoi(argv[0]);
-	timer = (int)(atof(argv[1]) * 1000);
+	timer = (int)(atof(argv[1]));
 
 	printf("Running \"Speedup\" simulation. (SM count: %d)\n", smCount);
 
-	mod[0] = Sequential(Conv2d(Conv2dOptions(512, 1024, 3).stride(2).padding(1)));
-	in[0] = torch::randn({ 512, 48, 48 }, kCUDA);
+	mod[++index] = Sequential(Conv2d(Conv2dOptions(64, 128, 3).stride(1).padding(2)));
+	in[index] = torch::randn({ 64, 56, 56 }, kCUDA);
 
-	// mod[1] = Sequential(Conv2d(Conv2dOptions(1024, 2048, 3).stride(2).padding(1)));
-	// in[1] = torch::randn({1024, 32, 32}, kCUDA);
+	mod[++index] = Sequential(Linear(512 * 4, 1000));
+	in[index] = torch::randn(512 * 4, kCUDA);
 
-	// mod[2] = Sequential(Conv2d(Conv2dOptions(3, 64, 7).stride(2).padding(2)));
-	// in[2] = torch::randn({3, 1024, 1024}, kCUDA);
+	mod[++index] = Sequential(BatchNorm2d(128));
+	in[index] = torch::randn({ 1, 128, 56, 56 }, kCUDA);
 
-	// mod[0] = Sequential(Linear(4096, 1000));
-	// in[0] = torch::randn(4096, kCUDA);
+	mod[++index] = Sequential(ReLU());
+	in[index] = torch::randn({ 128, 56, 56 }, kCUDA);
 
-	// mod[1] = Sequential(Linear(4096, 1000));
-	// in[1] = torch::randn(4096, kCUDA);
-
-	mod[1] = Sequential(Linear(4096 * 4, 10000));
-	in[1] = torch::randn(4096 * 4, kCUDA);
-
-	// mod[3] = Sequential(Linear(4096, 1000));
-	// in[3] = torch::randn(4096, kCUDA);
-
-	mod[2] = Sequential(BatchNorm2d(1024));
-	in[2] = torch::randn({ 1, 1024, 32, 24 }, kCUDA);
-
-	mod[3] = Sequential(ReLU());
-	in[3] = torch::randn({ 1024, 32, 24 }, kCUDA);
-
-	mod[4] = Sequential(MaxPool2d(MaxPool2dOptions(3).stride(2).padding(1)));
-	in[4] = torch::randn({ 64, 224, 224 }, kCUDA);
-
-	mod[5] = Sequential(AvgPool2d(AvgPool2dOptions(3).stride(2).padding(1)));
-	in[5] = torch::randn({ 64, 224, 224 }, kCUDA);
-
-	mod[6] = Sequential(AdaptiveMaxPool2d(AdaptiveMaxPool2dOptions(1)));
-	in[6] = torch::randn({ 2048, 3, 3 }, kCUDA);
-
-	mod[7] = Sequential(AdaptiveAvgPool2d(AdaptiveAvgPool2dOptions(1)));
-	in[7] = torch::randn({ 2048, 3, 3 }, kCUDA);
+	mod[++index] = Sequential(MaxPool2d(MaxPool2dOptions(2).stride(2).padding(0)));
+	in[index] = torch::randn({ 128, 56, 56 }, kCUDA);
 
 	for (int i = 0; i < MODULE_COUNT; i++)
 	{
 		mod[i]->eval();
 		mod[i]->to(kCUDA);
 	}
+
+	net->eval();
+	net->to(kCUDA);
 
 	int options[] = { smCount };
 
@@ -109,8 +111,8 @@ void testSpeedup(char** argv)
 
 	while (true)
 	{
-		for (int j = 0; j < MODULE_COUNT; j++)
-			dummy = mod[j]->forward(in[j]);
+		for (int j = 0; j < TOTAL_COUNT; j++)
+			forward(j);
 
 		cuCtxSynchronize();
 		now = steady_clock::now();
@@ -124,10 +126,12 @@ void testSpeedup(char** argv)
 
 	while (true)
 	{
-		for (int j = 0; j < MODULE_COUNT; j++)
-			dummy = mod[j]->forward(in[j]);
+		for (int j = 0; j < TOTAL_COUNT; j++)
+		{
+			forward(j);
+			cuCtxSynchronize();
+		}
 
-		cuCtxSynchronize();
 		now = steady_clock::now();
 
 		if (tend <= steady_clock::now())
@@ -138,21 +142,26 @@ void testSpeedup(char** argv)
 
 	steady_clock::time_point t1, t2;
 	duration<double> d;
-	vector<double> results(MODULE_COUNT);
+	vector<double> results(TOTAL_COUNT);
 
 	ctx->select();
 
-	for (int j = 0; j < MODULE_COUNT; j++)
+	cudaProfilerStart();
+	nvtxRangePush("whole");
+
+	for (int j = TOTAL_COUNT - 1; j >= 0; j--)
 	{
 		cout << "Running operation \"" << moduleName[j] << "\": ";
 		int count = 0;
+
+		auto id = nvtxRangeStartA(moduleName[j].c_str());
 
 		tstart = steady_clock::now();
 		tend = tstart + milliseconds(timer);
 
 		while (true)
 		{
-			dummy = mod[j]->forward(in[j]);
+			forward(j);
 			cuCtxSynchronize();
 			count++;
 			now = steady_clock::now();
@@ -161,6 +170,7 @@ void testSpeedup(char** argv)
 				break;
 		}
 
+		nvtxRangeEnd(id);
 		d = now - tstart;
 		results[j] = d.count() / count * 1000000;
 		printf("%6.3lfus\n", results[j]);
@@ -169,6 +179,9 @@ void testSpeedup(char** argv)
 		// cuCtxGetExecAffinity(&affinity, CU_EXEC_AFFINITY_TYPE_SM_COUNT);
 		// cout << "Aff: " << affinity.param.smCount.val << endl;
 	}
+
+	nvtxRangePop();
+	cudaProfilerStop();
 
 	ctx->release();
 	cout << "Saving results\n";

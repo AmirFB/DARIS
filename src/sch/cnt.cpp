@@ -128,18 +128,18 @@ Tensor MyContainer::schedule(Tensor input, int level)
 	return input;
 }
 
-void MyContainer::analyze(int warmup, int repeat, Tensor input)
+void MyContainer::analyze(int warmup, int repeat, Tensor input, int index)
 {
 	for (int i = 1; i <= 3; i++)
-		analyze(warmup, repeat, input, i);
+		analyze(warmup, repeat, input, index, i);
 }
 
-Tensor MyContainer::analyze(int warmup, int repeat, Tensor input, int level)
+Tensor MyContainer::analyze(int warmup, int repeat, Tensor input, int index, int level)
 {
 	for (auto op : operations[level - 1])
 	{
 		auto id = nvtxRangeStartA(op->getFullName().c_str());
-		input = op->analyze(warmup, repeat, input);
+		input = op->analyze(warmup, repeat, input, index);
 		nvtxRangeEnd(id);
 	}
 

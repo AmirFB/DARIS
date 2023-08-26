@@ -6,7 +6,7 @@
 
 using namespace FGPRS;
 
-struct BasicBlock: public MyContainer
+struct BasicBlock : public MyContainer
 {
 	BasicBlock(int64_t inplanes, int64_t planes, int64_t stride = 1,
 		MySequential downsample = MySequential(),
@@ -15,9 +15,9 @@ struct BasicBlock: public MyContainer
 
 	static const int64_t m_expansion = 1;
 
-	torch::nn::Conv2d m_conv1{nullptr}, m_conv2{ nullptr };
-	torch::nn::BatchNorm2d m_bn1{nullptr}, m_bn2{ nullptr };
-	torch::nn::ReLU m_relu{nullptr};
+	torch::nn::Conv2d m_conv1{ nullptr }, m_conv2{ nullptr };
+	torch::nn::BatchNorm2d m_bn1{ nullptr }, m_bn2{ nullptr };
+	torch::nn::ReLU m_relu{ nullptr };
 	MySequential m_downsample = MySequential();
 
 	int64_t m_stride;
@@ -25,7 +25,7 @@ struct BasicBlock: public MyContainer
 	torch::Tensor forward(torch::Tensor x);
 };
 
-struct Bottleneck: public MyContainer
+struct Bottleneck : public MyContainer
 {
 	Bottleneck(int64_t inplanes, int64_t planes, int64_t stride = 1,
 		MySequential downsample = MySequential(),
@@ -34,9 +34,9 @@ struct Bottleneck: public MyContainer
 
 	static const int64_t m_expansion = 4;
 
-	torch::nn::Conv2d m_conv1{nullptr}, m_conv2{ nullptr }, m_conv3{ nullptr };
-	torch::nn::BatchNorm2d m_bn1{nullptr}, m_bn2{ nullptr }, m_bn3{ nullptr };
-	torch::nn::ReLU m_relu{nullptr};
+	torch::nn::Conv2d m_conv1{ nullptr }, m_conv2{ nullptr }, m_conv3{ nullptr };
+	torch::nn::BatchNorm2d m_bn1{ nullptr }, m_bn2{ nullptr }, m_bn3{ nullptr };
+	torch::nn::ReLU m_relu{ nullptr };
 	MySequential m_downsample = MySequential();
 
 	int64_t m_stride;
@@ -45,7 +45,7 @@ struct Bottleneck: public MyContainer
 };
 
 template <typename Block>
-struct ResNet: public MyContainer
+struct ResNet : public MyContainer
 {
 	ResNet(const vector<int64_t> layers, int64_t num_classes = 1000,
 		bool zero_init_residual = false, int64_t groups = 1,
@@ -57,19 +57,18 @@ struct ResNet: public MyContainer
 	int64_t m_groups = 1;
 	int64_t m_base_width = 64;
 
-	torch::nn::Conv2d m_conv1{nullptr};
-	torch::nn::BatchNorm2d m_bn1{nullptr};
-	torch::nn::ReLU m_relu{nullptr};
-	torch::nn::MaxPool2d m_maxpool{nullptr};
+	torch::nn::Conv2d m_conv1{ nullptr };
+	torch::nn::BatchNorm2d m_bn1{ nullptr };
+	torch::nn::ReLU m_relu{ nullptr };
+	torch::nn::MaxPool2d m_maxpool{ nullptr };
 	MySequential m_layer1{ nullptr }, m_layer2{ nullptr },
 		m_layer3{ nullptr }, m_layer4{ nullptr };
-	torch::nn::AdaptiveAvgPool2d m_avgpool{nullptr};
-	torch::nn::Linear m_fc{nullptr};
+	torch::nn::AdaptiveAvgPool2d m_avgpool{ nullptr };
+	torch::nn::Linear m_fc{ nullptr };
 
 	MySequential _make_layer(int64_t planes, int64_t blocks,
 		int64_t stride = 1, bool dilate = false);
 
-	// torch::Tensor _forward_impl(torch::Tensor x);
 	torch::Tensor _forward_impl(torch::Tensor x)
 	{
 		x = m_conv1->forward(x);
@@ -89,8 +88,35 @@ struct ResNet: public MyContainer
 		return x;
 	}
 
-	// torch::Tensor forward(torch::Tensor x);
-	torch::Tensor forward(torch::Tensor x) { return _forward_impl(x); }
+	torch::Tensor forward(torch::Tensor x)
+	{
+		cout << "ResNet forward" << endl;
+		return _forward_impl(x);
+	}
+
+	Tensor forwardL(Tensor x, int index)
+	{
+		switch (index)
+		{
+			case 0:
+				x = m_conv1->forward(x);
+				x = m_bn1->forward(x);
+				x = m_relu->forward(x);
+				return  m_maxpool->forward(x);
+			case 1:
+				return m_layer1->forward(x);
+			case 2:
+				return m_layer2->forward(x);
+			case 3:
+				return m_layer3->forward(x);
+			case 4:
+				return m_layer4->forward(x);
+			case 5:
+				x = m_avgpool->forward(x);
+				x = torch::flatten(x, 1);
+				return m_fc->forward(x);
+		}
+	}
 };
 
 template <class Block>

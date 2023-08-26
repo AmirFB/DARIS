@@ -30,13 +30,13 @@ Tensor MySequential::schedule(Tensor input, int level)
 	return input;
 }
 
-Tensor MySequential::analyze(int warmup, int repeat, Tensor input, int level)
+Tensor MySequential::analyze(int warmup, int repeat, Tensor input, int index, int level)
 {
 	if (level > _maxLevel || containers.size() == 0)
-		return MyContainer::analyze(warmup, repeat, input, level);
+		return MyContainer::analyze(warmup, repeat, input, index, level);
 
 	for (auto cont : containers)
-		input = cont->analyze(warmup, repeat, input, level);
+		input = cont->analyze(warmup, repeat, input, index, level);
 
 	return input;
 }

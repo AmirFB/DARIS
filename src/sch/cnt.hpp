@@ -76,9 +76,9 @@ namespace FGPRS
 		virtual Tensor schedule(Tensor input, int level);
 		virtual Tensor scheduleMISO(vector<Tensor> input, int level) { return Tensor(); }
 
-		void analyze(int warmup, int repeat, Tensor input);
-		virtual Tensor analyze(int warmup, int repeat, Tensor input, int level);
-		virtual Tensor analyzeMISO(int warmup, int repeat, vector<Tensor> inputs, int level) { return Tensor(); }
+		void analyze(int warmup, int repeat, Tensor input, int index);
+		virtual Tensor analyze(int warmup, int repeat, Tensor input, int index, int level);
+		virtual Tensor analyzeMISO(int warmup, int repeat, vector<Tensor> inputs, int index, int level) { return Tensor(); }
 
 
 		virtual double assignExecutionTime(int level, int contextIndex, double executionTimetack);

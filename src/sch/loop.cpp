@@ -9,6 +9,7 @@
 # include <ctime>
 # include <sys/time.h>
 # include <pthread.h>
+# include <vector>
 
 # include <c10/cuda/CUDACachingAllocator.h>
 # include <cuda_runtime_api.h>
@@ -54,7 +55,8 @@ void Loop::initialize(int deadlineContextIndex, Tensor dummyInput, SchedulerType
 				_container->forward(dummyInput);
 
 				if (j != (Scheduler::smOptions.size() - 1))
-					stream.synchronize();
+					// stream.synchronize();
+					cudaStreamSynchronize(stream.stream());
 			}
 		}
 
@@ -71,14 +73,14 @@ void Loop::initialize(int deadlineContextIndex, Tensor dummyInput, SchedulerType
 	if (type == PROPOSED_SCHEDULER)
 	{
 		auto id = nvtxRangeStartA(_name.c_str());
-		_container->analyze(10, 25, dummyInput, level);
+		_container->analyze(5, 10, dummyInput, _index, level);
 		nvtxRangeEnd(id);
 
 		if (first)
 		{
 			// _container->clearAnalyzeLogger(_name);
 			id = nvtxRangeStartA(_name.c_str());
-			_container->analyze(1, 1, dummyInput, level);
+			_container->analyze(1, 1, dummyInput, _index, level);
 			nvtxRangeEnd(id);
 			first = false;
 		}
@@ -113,8 +115,8 @@ void run(
 	// pthread_setname_np(pthread_self(), name.c_str());
 
 	startTime = steady_clock::now();
-	// nextTime = startTime + nanoseconds((int)round(period * 0.25));
-	nextTime = startTime + milliseconds(2);
+	nextTime = startTime + nanoseconds((int)round(period * 2));
+	// nextTime = startTime + milliseconds(2);
 
 	container->meets = 0;
 	container->missed = 0;

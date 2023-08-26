@@ -40,7 +40,7 @@ void Operation::setParentName(string parentName)
 	}
 }
 
-Tensor Operation::analyze(int warmup, int repeat, Tensor input)
+Tensor Operation::analyze(int warmup, int repeat, Tensor input, int index)
 {
 	auto mainId = nvtxRangeStartA(_fullName.c_str());
 	NoGradGuard no_grad;
@@ -74,6 +74,7 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 		{
 			output = sequential->forward(input);
 			_stream.synchronize();
+			// cudaStreamSynchronize(_stream.stream());
 		}
 
 		cuCtxSynchronize();
@@ -97,6 +98,7 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 		{
 			output = sequential->forward(input);
 			_stream.synchronize();
+			// cudaStreamSynchronize(_stream.stream());
 		}
 
 		cuCtxSynchronize();
@@ -106,7 +108,7 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 		duration<double> d1 = tNow - tStart;
 
 		ctx->release();
-		Scheduler::startDummy(ctx);
+		Scheduler::startDummy(ctx, index);
 		usleep(5000);
 		ctx->select();
 
@@ -121,6 +123,7 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 		{
 			output = sequential->forward(input);
 			_stream.synchronize();
+			// cudaStreamSynchronize(_stream.stream());
 		}
 
 		cuCtxSynchronize();
@@ -178,7 +181,7 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input)
 	return output;
 }
 
-vector<Tensor> Operation::analyzeSIMO(int warmup, int repeat, Tensor input)
+vector<Tensor> Operation::analyzeSIMO(int warmup, int repeat, Tensor input, int index)
 {
 	NoGradGuard no_grad;
 	vector<Tensor> output;
@@ -216,7 +219,7 @@ vector<Tensor> Operation::analyzeSIMO(int warmup, int repeat, Tensor input)
 		duration<double> d1 = tNow - tStart;
 
 		ctx->release();
-		Scheduler::startDummy(ctx);
+		Scheduler::startDummy(ctx, index);
 		usleep(1000);
 		ctx->select();
 
@@ -325,8 +328,8 @@ Tensor Operation::runSync(Tensor input)
 	auto output = sequential->forward(input);
 	// cout << "F " << _parent->_name << ": " << _fullName << "\tindex: " << (int)_stream.device_index() << ", " << (int)_stream.id() << endl;
 	// if (highPriority || _parent->delayed)
-	_stream.synchronize();
-	// cudaStreamSynchronize(_stream.stream());
+	// _stream.synchronize();
+	cudaStreamSynchronize(_stream.stream());
 	// cout << "S " << _parent->_name << ": " << _fullName << "\tindex: " << (int)_stream.device_index() << ", " << (int)_stream.id() << endl;
 	_stream.release();
 	nvtxRangeEnd(id);

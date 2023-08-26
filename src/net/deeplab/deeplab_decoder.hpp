@@ -38,7 +38,7 @@ private:
 public:
 	void assignOperations(MyContainer* owner) override;
 	Tensor schedule(Tensor input, int leve) override;
-	Tensor analyze(int warmup, int repeat, Tensor input, int level) override;
+	Tensor analyze(int warmup, int repeat, Tensor input, int index, int level) override;
 	double assignExecutionTime(int level, int contextIndex, double executionTimeStack) override;
 	double assignDeadline(double quota, int level, int contextIndex, double deadlineStack) override;
 	void setAbsoluteDeadline(int level, steady_clock::time_point start, int bias) override;
@@ -72,7 +72,7 @@ private:
 public:
 	void assignOperations(MyContainer* owner) override;
 	Tensor scheduleMISO(vector<Tensor> inputs, int leve);
-	Tensor analyzeMISO(int warmup, int repeat, vector<Tensor> inputs, int level);
+	Tensor analyzeMISO(int warmup, int repeat, vector<Tensor> inputs, int index, int level);
 	double assignExecutionTime(int level, int contextIndex, double executionTimeStack) override;
 	double assignDeadline(double quota, int level, int contextIndex, double deadlineStack) override;
 	void setAbsoluteDeadline(int level, steady_clock::time_point start, int bias) override;

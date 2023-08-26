@@ -1,269 +1,195 @@
-# include <stdio.h>
-# include <stdlib.h>
-# include <sys/stat.h>
-# include <unistd.h>
-# include <future>
+// # include <stdio.h>
+// # include <stdlib.h>
+// # include <sys/stat.h>
 
-# include <iostream>
-# include <chrono>
+// # include <iostream>
+// # include <chrono>
 
-# include <torch/torch.h>
-# include <torch/script.h>
-# include <ATen/cuda/CUDAContext.h>
-# include <c10/cuda/CUDACachingAllocator.h>
+// # include <torch/torch.h>
+// # include <torch/script.h>
+// # include <ATen/cuda/CUDAContext.h>
+// # include <c10/cuda/CUDACachingAllocator.h>
+// # include <c10/cuda/CUDAGuard.h>
 
-# include <cuda.h>
-# include <cudaTypedefs.h>
-# include <cuda_runtime.h>
+// # include <cuda.h>
+// # include <cudaTypedefs.h>
+// # include <cuda_runtime.h>
 
-# include <tests.hpp>
-// # include <ctx.hpp>
-# include <schd.hpp>
+// # include <tests.hpp>
+// // # include <ctx.hpp>
+// # include <schd.hpp>
+// # include <resnet.hpp>
 
-using namespace std;
-using namespace chrono;
-using namespace torch;
-using namespace torch::nn;
-using namespace FGPRS;
+// using namespace std;
+// using namespace chrono;
+// using namespace torch;
+// using namespace torch::nn;
+// using namespace FGPRS;
 
-# define MODULE_COUNT	2
+// # define CONTEXT_COUNT	4
+// # define MODULE_COUNT		10
 
-vector<double> repeat(int timer,
-	MyContext* ctx1, Sequential mod1, Tensor in1,
-	MyContext* ctx2, Sequential mod2, Tensor in2);
-double run(int delay,
-	MyContext* ctx1, Sequential mod1, Tensor in1,
-	MyContext* ctx2, Sequential mod2, Tensor in2);
-void thrd(MyContext* ctx, Sequential mod, Tensor in);
+// shared_ptr<ResNet<BasicBlock>> mdi[MODULE_COUNT];
+// Tensor ini[MODULE_COUNT];
+// MyContext* ctx[CONTEXT_COUNT];
+
+// void dummThread(int index, MyContext* ctx, bool* stop, double* fps);
 
 void testInterference(char** argv)
 {
-	NoGradGuard no_grad;
-	Sequential cnv[MODULE_COUNT], lin[MODULE_COUNT];
-	Tensor inc[MODULE_COUNT], inl[MODULE_COUNT];
+	// 	NoGradGuard no_grad;
+	// 	bool stop = false;
+	// 	std::thread th[MODULE_COUNT];
+	// 	double fps[MODULE_COUNT];
+	// 	int mode;
 
-	int smCount, timer;
+	// 	int smCount, timer, index = -1;
 
-	smCount = atoi(argv[0]);
-	timer = (int)(atof(argv[1]));
+	// 	smCount = atoi(argv[0]);
+	// 	timer = (int)(atof(argv[1]));
 
-	printf("Running \"Interference\" simulation. (SM count: %d)\n", smCount);
+	// 	printf("Running \"Interference\" simulation. (SM count: %d)\n", smCount);
 
-	for (int i = 0; i < MODULE_COUNT; i++)
-	{
-		cnv[i] = Sequential(Conv2d(Conv2dOptions(512, 1024, 3).stride(2).padding(1)));
-		inc[i] = torch::randn({ 512, 48, 48 }, kCUDA);
+	// 	for (int i = 0; i < MODULE_COUNT; i++)
+	// 	{
+	// 		mdi[i] = resnet18(1000);
+	// 		ini[i] = torch::randn({ 1, 3, 224, 224 }, kCUDA);
+	// 		mdi[i]->eval();
+	// 		mdi[i]->to(kCUDA);
+	// 	}
 
-		lin[i] = Sequential(Linear(2048, 100));
-		inl[i] = torch::randn(2048, kCUDA);
-	}
+	// 	// int options[] = { smCount, 68, 68, 68, 68, 68, 68, 68, 68, 68 };
+	// 	int options[CONTEXT_COUNT];
 
-	for (int i = 0; i < MODULE_COUNT; i++)
-	{
-		cnv[i]->eval();
-		cnv[i]->to(kCUDA);
+	// 	for (int i = 0; i < CONTEXT_COUNT; i++)
+	// 		options[i] = smCount;
 
-		lin[i]->eval();
-		lin[i]->to(kCUDA);
-	}
+	// 	Tensor dummy;
+	// 	steady_clock::time_point tstart, now, tend;
+	// 	tstart = steady_clock::now();
+	// 	tend = tstart + milliseconds(timer);
 
-	int options[] = { min(smCount, 68 - smCount), max(smCount, 68 - smCount) };
+	// 	cout << "-------------------------------------------------------------------------------\n";
+	// 	cout << "Warming up\n";
 
-	if (!Scheduler::initialize(options, 2))
-	{
-		cout << "CUDA initialization failed.\n";
-		return;
-	}
+	// 	while (true)
+	// 	{
+	// 		for (int j = 0; j < MODULE_COUNT; j++)
+	// 		{
+	// 			mdi[j]->forward(ini[j]);
+	// 			cuCtxSynchronize();
+	// 		}
 
-	cout << "-------------------------------------------------------------------------------\n";
-	cout << "Warming up\n";
+	// 		now = steady_clock::now();
 
-	auto ctx1 = Scheduler::selectContext(smCount);
-	ctx1->select();
-	auto ctx2 = Scheduler::selectContext(68 - smCount);
-	ctx1->release();
+	// 		if (tend <= steady_clock::now())
+	// 			break;
+	// 	}
 
-	Tensor dummy;
-	steady_clock::time_point tstart, now, tend;
-	tstart = steady_clock::now();
-	tend = tstart + milliseconds(timer);
+	// 	if (!Scheduler::initialize(options, MODULE_COUNT))
+	// 	{
+	// 		cout << "CUDA initialization failed.\n";
+	// 		return;
+	// 	}
 
-	auto ctxD = Scheduler::selectContext(68);
-	ctxD->select();
+	// 	for (int i = 0; i < MODULE_COUNT; i++)
+	// 		ctx[i] = &Scheduler::_contextPool[i];
 
-	while (true)
-	{
-		for (int i = 0; i < MODULE_COUNT; i++)
-		{
-			ctxD->select();
-			dummy = cnv[i]->forward(inc[i]);
-			dummy = lin[i]->forward(inl[i]);
-			cuCtxSynchronize();
-			ctxD->release();
+	// 	steady_clock::time_point t1, t2;
+	// 	duration<double> d;
+	// 	vector<double> results(MODULE_COUNT);
 
-			ctx1->select();
-			dummy = cnv[i]->forward(inc[i]);
-			dummy = lin[i]->forward(inl[i]);
-			cuCtxSynchronize();
-			ctx1->release();
+	// 	// ctx[0]->select();
 
-			ctx2->select();
-			dummy = cnv[i]->forward(inc[i]);
-			dummy = lin[i]->forward(inl[i]);
-			cuCtxSynchronize();
-			ctx2->release();
-		}
+	// 	for (int j = 0; j < MODULE_COUNT; j++)
+	// 	{
+	// 		cout << "Running with " << j << " dummies: ";
+	// 		int count = 0;
 
-		cuCtxSynchronize();
-		now = steady_clock::now();
+	// 		stop = false;
 
-		if (tend <= steady_clock::now())
-			break;
-	}
+	// 		tstart = steady_clock::now();
+	// 		tend = tstart + milliseconds(500);
 
-	vector<double> results(0), temp(0);
+	// 		while (true)
+	// 		{
+	// 			for (int i = 0; i < (j + 1); i++)
+	// 			{
+	// 				mdi[i]->forward(ini[i]);
+	// 				cuCtxSynchronize();
+	// 			}
 
-	temp = repeat(timer,
-		ctx1, cnv[0], inc[0],
-		ctx2, lin[0], inl[0]);
-	results.insert(results.end(), temp.begin(), temp.end());
+	// 			now = steady_clock::now();
 
-	cout << "Saving results\n";
-	writeToFile("interference", smCount, results);
-	cout << "-------------------------------------------------------------------------------\n\n";
-}
+	// 			if (tend <= steady_clock::now())
+	// 				break;
+	// 		}
 
-vector<double> repeat(int timer,
-	MyContext* ctx1, Sequential mod1, Tensor in1,
-	MyContext* ctx2, Sequential mod2, Tensor in2)
-{
-	vector<double> output(0);
-	double result, bcet1, bcet2;
-	steady_clock::time_point tstart, tend, now;
-	static int round = 0;
-	int delayLimit[3];
-	int seed = time(NULL);
-	int delay;
+	// 		// if (true)//smCount != 68)
+	// 		// {
+	// 		for (int i = 0; i < (j + 1); i++)
+	// 			th[i] = std::thread(dummThread, i, ctx[i], &stop, &fps[i]);
 
-	printf("Round %d Results:\n", ++round);
+	// 		// if (j > 0)
+	// 		// 	this_thread::sleep_for(milliseconds(100));
+	// 	// }
 
-	int count = 0;
-	tstart = steady_clock::now();
-	tend = tstart + milliseconds(timer);
+	// 		tstart = steady_clock::now();
+	// 		tend = tstart + milliseconds(timer);
+	// 		// count = 0;
 
-	ctx1->select();
+	// 		// while (true)
+	// 		// {
+	// 		// 	mdi[j]->forward(ini[j]);
+	// 		// 	cuCtxSynchronize();
+	// 		// 	count++;
+	// 		// 	now = steady_clock::now();
 
-	while (true)
-	{
-		auto dummyOutput = mod1->forward(in1);
-		cuCtxSynchronize();
-		count++;
-		now = steady_clock::now();
+	// 		// 	if (tend <= steady_clock::now())
+	// 		// 		break;
+	// 		// }
 
-		if (tend <= steady_clock::now())
-			break;
-	}
+	// 		this_thread::sleep_for(milliseconds(timer));
+	// 		stop = true;
 
-	ctx1->release();
+	// 		results[j] = 0;
 
-	duration<double> d = now - tstart;
-	bcet1 = d.count() * 1000000 / count;
+	// 		for (int i = 0; i < (j + 1); i++)
+	// 		{
+	// 			th[i].join();
+	// 			results[j] += fps[i];
+	// 		}
 
-	count = 0;
-	tstart = steady_clock::now();
-	tend = tstart + milliseconds(timer);
+	// 		// d = now - tstart;
+	// 		// results[j] = d.count() / count * 1000000;
 
-	ctx2->select();
+	// 		printf("%6.3lfus\n", results[j]);
 
-	while (true)
-	{
-		auto dummyOutput = mod2->forward(in2);
-		cuCtxSynchronize();
-		count++;
-		now = steady_clock::now();
+	// 		// if (smCount != 68)
+	// 	}
 
-		if (tend <= steady_clock::now())
-			break;
-	}
+	// 	// ctx[0]->release();
+	// 	cout << "Saving results\n";
+	// 	writeToFile("interference", smCount, results);
+	// 	cout << "-------------------------------------------------------------------------------\n\n";
+	// }
 
-	ctx2->release();
+	// void dummThread(int index, MyContext* ctx, bool* stop, double* fps)
+	// {
+	// 	int count = 0;
+	// 	ctx->select();
 
-	d = now - tstart;
-	bcet2 = d.count() * 1000000 / count;
-	output.push_back(bcet2);
+	// 	auto tstart = steady_clock::now();
 
-	delayLimit[0] = max(bcet1 - bcet2, 0.0) * 0.01;
-	delayLimit[1] = max(bcet1 - bcet2, 0.0) * 0.5;
-	delayLimit[2] = max(bcet1 - bcet2, 0.0) * 0.95;
+	// 	while (!*stop)
+	// 	{
+	// 		mdi[index]->forward(ini[index]);
+	// 		cuCtxSynchronize();
+	// 		count++;
+	// 	}
 
-	cout << "Limits: " << delayLimit[0] << "->" << delayLimit[1] << "->" << delayLimit[2] << endl;
-	cout << "BCET: " << bcet2 << endl << endl;
-
-	for (int i = 0; i < 4; i++)
-	{
-		count = 0;
-		result = 0;
-
-		if (i < 3)
-			delay = delayLimit[i];
-
-		else
-			srand(seed);
-
-		tstart = steady_clock::now();
-		tend = tstart + milliseconds(timer);
-
-		while (true)
-		{
-			if (i == 3)
-				delay = delayLimit[0] + (float)rand() / RAND_MAX * (delayLimit[1] - delayLimit[0]);
-
-			result += run(delay,
-				ctx1, mod1, in1,
-				ctx2, mod2, in2);
-
-			count++;
-			now = steady_clock::now();
-
-			if (tend <= steady_clock::now())
-				break;
-		}
-
-		result = result / count * 1000000;
-		output.push_back(result);
-		cout << result << endl;
-	}
-
-	cout << endl;
-	return output;
-}
-
-double run(int delay,
-	MyContext* ctx1, Sequential mod1, Tensor in1,
-	MyContext* ctx2, Sequential mod2, Tensor in2)
-{
-	steady_clock::time_point t1, t2, t3;
-	vector<double> output(2);
-	duration<double> d;
-
-	auto th1 = async(thrd, ctx1, mod1, in1);
-	usleep(delay);
-
-	t1 = steady_clock::now();
-	thrd(ctx2, mod2, in2);
-	t2 = steady_clock::now();
-
-	th1.get();
-
-	d = t2 - t1;
-	return d.count();
-}
-
-void thrd(MyContext* ctx, Sequential mod, Tensor in)
-{
-	ctx->select();
-	ctx->lock();
-	auto out = mod->forward(in);
-	ctx->unlock();
-	ctx->release();
+	// 	auto tend = steady_clock::now();
+	// 	duration<double> d = tend - tstart;
+	// 	*fps = count / d.count();
+	// 	ctx->release();
 }

@@ -126,17 +126,17 @@ Tensor ASPPImpl::schedule(Tensor input, int level)
 	return o_project->scheduleSync(input);
 }
 
-Tensor ASPPImpl::analyze(int warmup, int repeat, Tensor input, int level)
+Tensor ASPPImpl::analyze(int warmup, int repeat, Tensor input, int index, int level)
 {
 	vector<Tensor> result;
 
 	for (int i = 0; i < o_modules.size(); i++)
-		result.push_back(o_modules[i]->analyze(warmup, repeat, input));
+		result.push_back(o_modules[i]->analyze(warmup, repeat, input, index));
 
-	result.push_back(o_aspppooling->analyze(warmup, repeat, input));
+	result.push_back(o_aspppooling->analyze(warmup, repeat, input, index));
 
 	input = cat(result, 1);
-	return o_project->analyze(warmup, repeat, input);
+	return o_project->analyze(warmup, repeat, input, index);
 }
 
 double ASPPImpl::assignExecutionTime(int level, int contextIndex, double executionTimeStack)
@@ -298,15 +298,15 @@ Tensor DeepLabV3PlusDecoderImpl::scheduleMISO(vector<Tensor> inputs, int level)
 	return o_block2->scheduleSync(concat_features);
 }
 
-Tensor DeepLabV3PlusDecoderImpl::analyzeMISO(int warmup, int repeat, vector<Tensor> inputs, int level)
+Tensor DeepLabV3PlusDecoderImpl::analyzeMISO(int warmup, int repeat, vector<Tensor> inputs, int index, int level)
 {
-	auto high_res_features = o_block1->analyze(warmup, repeat, inputs[inputs.size() - 4]);
-	auto aspp_features = m_aspp->analyze(warmup, repeat, inputs.back(), level);
-	aspp_features = o_aspp_seq->analyze(warmup, repeat, aspp_features);
-	aspp_features = o_up->analyze(warmup, repeat, aspp_features);
+	auto high_res_features = o_block1->analyze(warmup, repeat, inputs[inputs.size() - 4], index);
+	auto aspp_features = m_aspp->analyze(warmup, repeat, inputs.back(), index, level);
+	aspp_features = o_aspp_seq->analyze(warmup, repeat, aspp_features, index);
+	aspp_features = o_up->analyze(warmup, repeat, aspp_features, index);
 
 	auto concat_features = cat({ aspp_features, high_res_features }, 1);
-	return o_block2->analyze(warmup, repeat, concat_features);
+	return o_block2->analyze(warmup, repeat, concat_features, index);
 }
 
 double DeepLabV3PlusDecoderImpl::assignExecutionTime(int level, int contextIndex, double executionTimeStack)
