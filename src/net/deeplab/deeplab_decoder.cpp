@@ -1,3 +1,4 @@
+# include <main.hpp>
 # include "deeplab_decoder.hpp"
 
 # include <schd.hpp>
@@ -286,6 +287,10 @@ void DeepLabV3PlusDecoderImpl::assignOperations(MyContainer* owner)
 
 Tensor DeepLabV3PlusDecoderImpl::scheduleMISO(vector<Tensor> inputs, int level)
 {
+	// cout << "inputs size: " << inputs.size() << "\n";
+	// for (int i = 0; i < inputs.size(); i++)
+	// 	cout << "input " << i << " size: " << inputs[i].sizes() << "\n";
+
 	o_block1->startSchedule(&inputs[inputs.size() - 4]);
 
 	auto aspp_features = m_aspp->schedule(inputs.back(), level);

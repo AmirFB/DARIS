@@ -20,13 +20,19 @@ namespace FGPRS
 		int _index;
 
 	public:
+		int totalCount, compCount, missCount;
+
 		Loop() {}
 		Loop(string name, shared_ptr<MyContainer> container, double _frequency, int index = -1);
 
+		void prepare();
 		void initialize(int deadlineContextIndex, Tensor dummyInput, SchedulerType type, int level);
-		void start(Tensor* input, SchedulerType type, int level = 0, bool logIt = false);
+		void start(Tensor* input, SchedulerType type, int level, bool logIt, int timer);
 		void stop();
 		void wait();
+
+		int completed() { return _container->meets + _container->missed; }
+		int met() { return _container->meets; }
 	};
 }
 

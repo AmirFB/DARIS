@@ -18,22 +18,24 @@ using namespace FGPRS;
 using namespace std;
 using namespace torch;
 
+int MyContext::maxParallel;
+
 MyContext::MyContext(unsigned smCount, int index, bool isDefault) :
 	smCount(smCount), index(index), _default(isDefault),
 	_pMutex(new mutex), _pQueueMutex(new mutex), //_lock(*_pMutex),
 	cv(new condition_variable())
 {
-	if (smCount <= 20)
-		maxParallel = 2;
+	// if (smCount <= 20)
+	// 	maxParallel = 3;
 
-	else if (smCount < 40)
-		maxParallel = 2;
+	// else if (smCount < 40)
+	// 	maxParallel = 3;
 
-	else if (smCount < 60)
-		maxParallel = 2;
+	// else if (smCount < 60)
+	// 	maxParallel = 3;
 
-	else
-		maxParallel = 2;
+	// else
+	// maxParallel = 3;
 }
 
 bool MyContext::initialize()
@@ -160,7 +162,7 @@ void MyContext::unlock(Operation* operation)
 		if (op->running)
 			continue;
 
-		tempSlack = duration_cast<microseconds>(op->absoluteDeadline - now) - microseconds((int)op->contextData[index].occupiedExecutionTime);
+		tempSlack = duration_cast<microseconds>(op->absoluteDeadline - now) - microseconds((int)op->contextData[index - 1].occupiedExecutionTime);
 
 		if (tempSlack < minSlack)
 		{
@@ -218,11 +220,11 @@ steady_clock::time_point MyContext::getFinishTime()
 	double sum = 0;
 
 	for (auto op : queue)
-		sum += op->contextData[index].occupiedExecutionTime;
+		sum += op->contextData[index - 1].occupiedExecutionTime;
 
 	time_point<steady_clock> dummystart;
 
-	if ((queue[0]->startTime + microseconds((int)queue[0]->contextData[index].occupiedExecutionTime)) < steady_clock::now())
+	if ((queue[0]->startTime + microseconds((int)queue[0]->contextData[index - 1].occupiedExecutionTime)) < steady_clock::now())
 		dummystart = steady_clock::now();
 	else
 		dummystart = queue[0]->startTime;

@@ -1,3 +1,5 @@
+# include <main.hpp>
+
 # include <iostream>
 # include <fstream>
 # include <iomanip>
@@ -8,10 +10,10 @@
 # include <cstdlib>
 # include <future>
 # include <sys/stat.h>
-// # include <random>
+# include <random>
 # include <ctime>
 # include <filesystem>
-// # include "spdlog/spdlog.h"
+# include "spdlog/spdlog.h"
 # include "spdlog/sinks/basic_file_sink.h"
 
 # include <torch/torch.h>
@@ -55,43 +57,116 @@ using namespace FGPRS;
 # define SCHEDULER 		1
 # define MODE					SCHEDULER
 
+# define MAX_MODULE_COUNT		30
+
 shared_ptr<logger> logger;
 
 void distributeSMs(int* array, int total, int count);
 vector<double> generateUtilization(int count, double total);
 
-double maxFPS[] = { 769, 302, 92, 473, 144, 44 };
-
 int main(int argc, char** argv)
 {
 # if MODE == SCHEDULER
-	// srand(time(nullptr));
+	srand(time(nullptr));
 	auto logger = spdlog::basic_logger_mt("main_logger", "log.log");
 	logger->set_pattern("[%S.%f] %v");
 	NoGradGuard no_grad;
-	int level = 2;
+	int level = 3;
 	int moduleCount, dummyCount = 0;
 	double frequency;
 
 	SchedulerType type;
 	int* smOptions;
 	int smCount;
+	int mode;
+	int distribute;
+	int maxStreams;
+	const int MaxSMs = 68;
+	int totalSMs;
+	int timer;
+	string fileNameComp, fileNameMiss;
 
-	moduleCount = atoi(argv[2]);
-	dummyCount = atoi(argv[3]);
-	frequency = atof(argv[4]);
+	if (!strcmp(argv[1], "proposed") && !strcmp(argv[2], "clear"))
+	{
+		filesystem::remove_all("results/final");
+		return 0;
+	}
 
+	// moduleCount = atoi(argv[2]);
+	frequency = atof(argv[2]);
+	timer = atoi(argv[3]);
+	moduleCount = 5;
 	cout << "Initializing scheduler ..." << endl;
 
 	if (!strcmp(argv[1], "proposed"))
 	{
 		type = PROPOSED_SCHEDULER;
 
-		smCount = atoi(argv[5]);
+		mode = atoi(argv[4]);
+		distribute = atoi(argv[5]);
+		smCount = atoi(argv[6]);
+
+		if (smCount == 2)
+			maxStreams = 3;
+
+		else
+			maxStreams = 2;
+
+		MyContext::maxParallel = maxStreams;
+		dummyCount = min(smCount * maxStreams - 1, moduleCount - 1);
+
 		smOptions = new int[smCount];
 
+		if (mode == 1)
+			totalSMs = MaxSMs;
+
+		else if (mode == 2)
+			totalSMs = MaxSMs * 1.5;
+
+		else
+			totalSMs = MaxSMs * 2;;
+
+		if (distribute == 1)
+			for (int i = 0; i < smCount; i++)
+			{
+				smOptions[i] = ceil(totalSMs / smCount);
+				smOptions[i] = min(smOptions[i] + smOptions[i] % 2, MaxSMs);
+			}
+
+		else
+		{
+			int divider = smCount * (smCount + 1) / 2;
+
+			for (int i = 0; i < smCount; i++)
+			{
+				smOptions[i] = ceil((i + 1) * totalSMs / divider);
+				smOptions[i] = min(smOptions[i] + smOptions[i] % 2, MaxSMs);
+			}
+		}
+
+		totalSMs = 0;
+
 		for (int i = 0; i < smCount; i++)
-			smOptions[i] = atoi(argv[6 + i]);
+			totalSMs += smOptions[i];
+
+		cout << "Simulation Parameters:" << endl
+			<< "\tMode: " << (mode == 1 ? "1.0x" : (mode == 2 ? "1.5x" : "2.0x")) << endl
+			<< "\tDistribute: " << (distribute == 1 ? "Equal" : "Stepwise") << endl
+			<< "\tSM Count: " << smCount << endl
+			<< "\tMax Streams: " << maxStreams << endl
+			<< "\tTotal SMs: " << totalSMs << endl
+			<< "----------------------------------------" << endl;
+
+		filesystem::create_directory("results/final");
+		filesystem::create_directory(("results/final/" + to_string(smCount)).c_str());
+		fileNameComp = ("final/" + to_string(smCount) + "/" + (mode == 1 ? "1.0x" : (mode == 2 ? "1.5x" : "2.0x")) + "_" + (distribute == 1 ? "Equal" : "Stepwise") + "_Comp.csv");
+		fileNameMiss = ("final/" + to_string(smCount) + "/" + (mode == 1 ? "1.0x" : (mode == 2 ? "1.5x" : "2.0x")) + "_" + (distribute == 1 ? "Equal" : "Stepwise") + "_Miss.csv");
+
+		writeToFile(fileNameComp, mode, true, true);
+		writeToFile(fileNameComp, distribute, true, false);
+
+		writeToFile(fileNameMiss, mode, true, true);
+		writeToFile(fileNameMiss, distribute, true, false);
 	}
 
 	else if (!strcmp(argv[1], "mps"))
@@ -130,122 +205,119 @@ int main(int argc, char** argv)
 	Scheduler::initialize(smOptions, smCount, type, true);
 	MyContext::selectDefault();
 
-	Tensor inputs[moduleCount];
-	shared_ptr<MyContainer> mods[moduleCount];
-	// shared_ptr<ResNet<BasicBlock>> mods[moduleCount];
-	// shared_ptr<DeepLabV3Plus> mods[moduleCount];
-	Loop loops[moduleCount];
+	Tensor inputs[MAX_MODULE_COUNT];
+	shared_ptr<MyContainer> mods[MAX_MODULE_COUNT];
+	Loop loops[MAX_MODULE_COUNT];
 
 	cout << "Initializing modules ..." << endl;
 	filesystem::remove_all("logs");
 
-	string name;
-	int modIndex, inputSize = 224;
-	double freq;
-	// auto quotas = generateUtilization(moduleCount, frequency);
-	string freqStr;
+	string name, freqStr;
 
 	// cudaProfilerStart();
 
-	// vector<DummyContainer> dummySet;
-
-	for (size_t i = 0; i < moduleCount; i++)
-		Scheduler::dummyContainer.push_back(DummyContainer{ mods[i], &inputs[i], i });
-
-	// random_shuffle(dummySet.begin(), dummySet.end());
-	Scheduler::dummyContainer.resize(dummyCount + 1);
-	// Scheduler::dummyContainer = vector<shared_ptr<DummyContainer>>(dummySet.begin(), dummySet.end());
-
-	for (int i = 0; i < moduleCount; i++)
+	for (int i = 0; i < MAX_MODULE_COUNT; i++)
 	{
-		modIndex = rand() % 1;
-		// freq = quotas[i] * maxFPS[modIndex];
-		// freq = (i + 1) * 15 - 1;
-		// freq = 200;
-
-		freq = 30;
-
 		stringstream stream;
-		stream << fixed << setprecision(2) << freq;
+		stream << fixed << setprecision(2) << frequency;
 		freqStr = stream.str();
 
-		name = (modIndex < 3 ? "resnet" : "deeplab") +
-			to_string(i + 1);// +"_" + to_string(inputSize) + "_" + freqStr + "Hz";
+		name = "resnet" + to_string(i + 1);
 
-		// cout << "\t" << setprecision(2) << name << (i + 1) << " (" << (quotas[i] / frequency * 100) << "%)" << endl;
+		inputs[i] = torch::randn({ 1, 3, 224, 224 }, kCUDA);
+		mods[i] = resnet18(1000);
 
-		// inputs[i] = torch::randn({ 1, 3, 224, 224 }, kCUDA);
-		// mods[i] = resnet18(1000);
-		// mods[i] = make_shared<DeepLabV3PlusImpl>(DeepLabV3PlusImpl(100, "resnet18"));
-		// loops[i] = Loop(name + to_string(i + 1), mods[i], frequency, i);
+		loops[i] = Loop(name, mods[i], frequency, i);
+		loops[i].prepare();
+	}
 
-		inputs[i] = torch::randn({ 1, 3, inputSize, inputSize }, kCUDA);
+	for (size_t i = 0; i < MAX_MODULE_COUNT; i++)
+		Scheduler::dummyContainer.push_back(DummyContainer{ mods[i], &inputs[i], i });
 
-		if (modIndex < 3)
-			mods[i] = resnet18(1000);
-		else
-			mods[i] = make_shared<DeepLabV3PlusImpl>(DeepLabV3PlusImpl(100, "resnet18"));
+	random_shuffle(Scheduler::dummyContainer.begin(), Scheduler::dummyContainer.end());
+	Scheduler::dummyContainer.resize(dummyCount + 1);
 
-		loops[i] = Loop(name, mods[i], freq, i);
+	// cudaProfilerStart();
+
+	for (int i = 0; i < MAX_MODULE_COUNT; i++)
+	{
+		cout << "Initializing " << mods[i]->_name << " ..." << endl;
 		loops[i].initialize(smCount - 1, inputs[i], type, level);
 	}
 
 	// cudaProfilerStop();
+	// return 0;
 
-	// inputs[0] = torch::randn({ 1, 3, 1024, 1024 }, kCUDA);
-	// mods[0] = resnet18(1000);
-	// Loops[0] = Loop("res1", mods[0], 30, 0);
-	// Loops[0].initialize(3, inputs[0], type, level);
+	cout << "Initializing modules finished!" << endl << endl << endl << endl << endl;
 
 	cout << "Warming up ..." << endl;
 
-	// cudaProfilerStart();
+	cout << "Memory: " << Scheduler::getFreeMemoryGB() << " GB" << endl;
+	cudaProfilerStart();
 
-	for (int i = 0; i < moduleCount; i++)
-		loops[i].start(&inputs[i], type, level, false);
+	for (int i = 0; i < MAX_MODULE_COUNT; i++)
+		loops[i].start(&inputs[i], type, level, false, 100);
 
-	this_thread::sleep_for(milliseconds(500));
+	// this_thread::sleep_for(milliseconds(100));
 
-	for (int i = 0; i < moduleCount; i++)
+	for (int i = 0; i < MAX_MODULE_COUNT; i++)
 		loops[i].stop();
 
-	for (int i = 0; i < moduleCount; i++)
+	for (int i = 0; i < MAX_MODULE_COUNT; i++)
 		loops[i].wait();
 
 	cout << endl << endl << endl << endl << endl;
 
-	// system("clear");
 	cout << "Memory: " << Scheduler::getFreeMemoryGB() << " GB" << endl;
 	cout << "Here we go ...\n";
 
-	auto now = std::time(nullptr);
-	char time_string[20];
-	std::strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-	std::cout << "Current time: " << time_string << ".";
-	std::clock_t clock = std::clock();
-	double microseconds = 1000000.0 * static_cast<double>(clock) / CLOCKS_PER_SEC;
-	std::cout << std::fixed << std::setprecision(0) << std::setw(6) << std::setfill('0') << microseconds << std::endl;
-
 	logger->info("Started!");
 
-	cudaProfilerStart();
+	// cudaProfilerStart();
 	nvtxRangePush("whole");
 
-	for (int i = 0; i < moduleCount; i++)
-		loops[i].start(&inputs[i], type, level, true);
+	int total = 0, comp = 0, miss = 0;
+	double compPercent, missPercent;
 
-	this_thread::sleep_for(milliseconds(1000));
+	for (int j = 20; j <= MAX_MODULE_COUNT; j++)
+	{
+		cout << "........................\n";
+		cout << "Running with " << j << " modules:\n";
 
-	for (int i = 0; i < moduleCount; i++)
-		loops[i].stop();
+		for (int i = 0; i < j; i++)
+			loops[i].start(&inputs[i], type, level, true, timer);
 
-	for (int i = 0; i < moduleCount; i++)
-		loops[i].wait();
+		// this_thread::sleep_for(milliseconds((int)(1000 + 1000 / freq)));
+
+		// for (int i = 0; i < j; i++)
+		// 	loops[i].stop();
+
+		for (int i = 0; i < j; i++)
+		{
+			loops[i].wait();
+
+			total += loops[i].totalCount;
+			comp += loops[i].compCount;
+			miss += loops[i].missCount;
+		}
+
+		compPercent = 100. * comp / total;
+		missPercent = 100. * miss / total;
+
+		writeToFile(fileNameComp, compPercent, j != MAX_MODULE_COUNT, false);
+		writeToFile(fileNameMiss, missPercent, j != MAX_MODULE_COUNT, false);
+	}
+
+	cout << "........................\n";
 
 	nvtxRangePop();
 	cudaProfilerStop();
 
 	logger->info("Finished!");
+	this_thread::sleep_for(milliseconds(100));
+	torch::cuda::synchronize();
+	cudaDeviceSynchronize();
+	cout << "-------------------------------------------------------------------------------\n\n";
 
 # elif MODE == PRELIMINARY
 

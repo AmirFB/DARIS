@@ -1,3 +1,4 @@
+# include "main.hpp"
 # include "deeplab.hpp"
 
 # include <cnt.hpp>
@@ -91,7 +92,7 @@ torch::Tensor DeepLabV3PlusImpl::forward(torch::Tensor x)
 
 void DeepLabV3PlusImpl::assignOperations()
 {
-	o_encoder = addOperationSIMO(this, "encoder", m_encoder, 0);
+	o_encoder = addOperationSIMO(this, "encoder", m_encoder, 0, false, false);
 
 	m_decoder->assignOperations(this);
 	// copyOperations("decoder", (MyContainer*)&m_decoder);
@@ -115,7 +116,6 @@ Tensor DeepLabV3PlusImpl::schedule(Tensor input, int level)
 Tensor DeepLabV3PlusImpl::analyze(int warmup, int repeat, Tensor input, int index, int level)
 {
 	auto features = o_encoder->analyzeSIMO(warmup, repeat, input, index);
-
 	// if (level == 3)
 	// 	input = o_decoder->analyze(warmup, repeat, input, index);
 

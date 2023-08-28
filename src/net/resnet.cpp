@@ -647,7 +647,10 @@ struct ResNet : public MyContainer
 
 	Tensor schedule(Tensor input, int level) override
 	{
-		input = o_layer0->scheduleSync(input);
+		Tensor output;
+
+		output = o_layer0->scheduleSync(input);
+		// input.reset();
 
 		// input = o_conv1->scheduleSync(input);
 		// input = o_bn1->scheduleSync(input);
@@ -656,10 +659,14 @@ struct ResNet : public MyContainer
 
 		if (level == 3)
 		{
-			input = o_layer1->scheduleSync(input);
-			input = o_layer2->scheduleSync(input);
-			input = o_layer3->scheduleSync(input);
-			input = o_layer4->scheduleSync(input);
+			input = o_layer1->scheduleSync(output);
+			// output.reset();
+			output = o_layer2->scheduleSync(input);
+			// input.reset();
+			input = o_layer3->scheduleSync(output);
+			// output.reset();
+			output = o_layer4->scheduleSync(input);
+			// input.reset();
 		}
 
 		else
@@ -674,7 +681,8 @@ struct ResNet : public MyContainer
 		// input = flatten(input, 1);
 		// input = o_fc->scheduleSync(input);
 
-		input = o_layerX->scheduleSync(input);
+		input = o_layerX->scheduleSync(output);
+		// output.reset();
 
 		return input;
 	}

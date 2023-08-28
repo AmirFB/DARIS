@@ -1,3 +1,5 @@
+# include <main.hpp>
+
 # include <loop.hpp>
 
 # include <cnt.hpp>
@@ -10,6 +12,7 @@
 # include <sys/time.h>
 # include <pthread.h>
 # include <vector>
+# include <random>
 
 # include <c10/cuda/CUDACachingAllocator.h>
 # include <cuda_runtime_api.h>
@@ -30,41 +33,44 @@ Loop::Loop(string name, shared_ptr<MyContainer> container, double frequency, int
 {
 }
 
-void Loop::initialize(int deadlineContextIndex, Tensor dummyInput, SchedulerType type, int level)
+void Loop::prepare()
 {
 	MyContext::selectDefault();
 	_container->eval();
 	_container->to(kCUDA);
 
 	_container->initLoggers(_name);
+}
 
+void Loop::initialize(int deadlineContextIndex, Tensor dummyInput, SchedulerType type, int level)
+{
 	// auto stream = at::cuda::getStreamFromPool(false, 0);
 
-	for (int j = Scheduler::smOptions.size() - 1; j >= 0; j--)
+	for (int j = 0; j < Scheduler::contextCount; j++)
 	{
 		auto ctx = Scheduler::selectContextByIndex(j);
 		ctx->select();
 
-		if (type == PROPOSED_SCHEDULER && (j != (Scheduler::smOptions.size() - 1) && Scheduler::noDefault == true))
+		// if (type == PROPOSED_SCHEDULER && (j != (Scheduler::contextCount) && Scheduler::noDefault == true))
+		// {
+
+		for (int i = 0; i < 10; i++)
 		{
-			auto stream = at::cuda::getStreamFromPool(false, ctx->index);
+			auto stream = at::cuda::getStreamFromPool(i % 2, ctx->index);
 			at::cuda::setCurrentCUDAStream(stream);
+			_container->forward(dummyInput);
 
-			for (int i = 0; i < 10; i++)
-			{
-				_container->forward(dummyInput);
-
-				if (j != (Scheduler::smOptions.size() - 1))
-					// stream.synchronize();
-					cudaStreamSynchronize(stream.stream());
-			}
+			// if (j != Scheduler::contextCount)
+			stream.synchronize();
+			// cudaStreamSynchronize(stream.stream());
 		}
+		// }
 
-		else
-			for (int i = 0; i < 10; i++)
-				_container->forward(dummyInput);
+		// else
+		// 	for (int i = 0; i < 10; i++)
+		// 		_container->forward(dummyInput);
 
-		cuCtxSynchronize();
+		// cuCtxSynchronize();
 		ctx->release();
 	}
 
@@ -72,18 +78,33 @@ void Loop::initialize(int deadlineContextIndex, Tensor dummyInput, SchedulerType
 
 	if (type == PROPOSED_SCHEDULER)
 	{
-		auto id = nvtxRangeStartA(_name.c_str());
-		_container->analyze(5, 10, dummyInput, _index, level);
-		nvtxRangeEnd(id);
-
 		if (first)
 		{
 			// _container->clearAnalyzeLogger(_name);
-			id = nvtxRangeStartA(_name.c_str());
-			_container->analyze(1, 1, dummyInput, _index, level);
+#ifdef ENABLE_NVTX_PROFILING
+			auto id = nvtxRangeStartA(_name.c_str());
+#endif
+
+			_container->analyze(5, 10, dummyInput, _index, level);
+
+#ifdef ENABLE_NVTX_PROFILING
 			nvtxRangeEnd(id);
+#endif
+
 			first = false;
 		}
+
+#ifdef ENABLE_NVTX_PROFILING
+		auto id = nvtxRangeStartA(_name.c_str());
+#endif
+
+		// cout << "Analyzing " << _name << " ..." << endl;
+		_container->analyze(10, 25, dummyInput, _index, level);
+		// cout << "Analyzing " << _name << " done." << endl;
+
+#ifdef ENABLE_NVTX_PROFILING
+		nvtxRangeEnd(id);
+#endif
 
 		_container->assignExecutionTime(level, deadlineContextIndex, 0);
 		_container->assignDeadline(_period / 1000 * 0.95, level, deadlineContextIndex, 0);
@@ -93,7 +114,7 @@ void Loop::initialize(int deadlineContextIndex, Tensor dummyInput, SchedulerType
 void run(
 	string name, shared_ptr<MyContainer> container, Tensor* input,
 	double period, bool* stop, int level, int index,
-	SchedulerType type, bool logIt)
+	SchedulerType type, bool logIt, int timer, Loop* loop)
 {
 	NoGradGuard no_grad;
 	int frame = 0;
@@ -114,8 +135,20 @@ void run(
 	// pthread_t nativeHandle = myThread.native_handle();
 	// pthread_setname_np(pthread_self(), name.c_str());
 
-	startTime = steady_clock::now();
-	nextTime = startTime + nanoseconds((int)round(period * 2));
+	// std::random_device rd;
+	// std::mt19937 gen(rd());
+	// std::uniform_int_distribution<> dis(0, interval);
+	// int randomMicroseconds = dis(gen);
+
+	// Add the random time interval to the start time
+	startTime = steady_clock::now() + std::chrono::milliseconds(rand() % (int)round(period / 1000000));
+	auto endTime = startTime + milliseconds(timer) + interval / 10;
+
+	// startTime = steady_clock::now();// +std::chrono::milliseconds(1);
+	// auto endTime = startTime + milliseconds(1000);
+
+	// startTime = steady_clock::now();
+	nextTime = startTime + nanoseconds((int)round(period * 1));
 	// nextTime = startTime + milliseconds(2);
 
 	container->meets = 0;
@@ -123,9 +156,14 @@ void run(
 
 	steady_clock::time_point dummyNow;
 
-	while (!*stop)
+	std::this_thread::sleep_until(startTime);
+
+	// while (!*stop)
+	while (true)
 	{
+#ifdef ENABLE_NVTX_PROFILING
 		auto id = nvtxRangeStartA((name + " " + to_string(frame)).c_str());
+#endif
 
 		if (type == PROPOSED_SCHEDULER)
 			container->setAbsoluteDeadline(level, nextTime, 0);
@@ -135,7 +173,27 @@ void run(
 
 		// cout << name << " " << frame << endl;
 		if (type == PROPOSED_SCHEDULER)
-			container->schedule(*input, level);
+		{
+			// auto out = container->schedule(*input, level);
+			// out.reset();
+
+			std::promise<torch::Tensor> promise;
+
+			// Get the future associated with the promise
+			std::future<torch::Tensor> future = promise.get_future();
+
+			// Create and start the thread
+			std::thread scheduleThread([container, &input, &promise, level]() {
+				torch::Tensor result = container->schedule(*input, level); // Assuming level is defined
+				promise.set_value(result); // Set the result for the future
+				});
+
+			// Wait for the thread to finish and get the result
+			torch::Tensor out = future.get();
+
+			// Join the thread
+			scheduleThread.join();
+		}
 
 		else
 		{
@@ -163,28 +221,53 @@ void run(
 		{
 			if (logIt)
 				container->scheduleLogger->info("Reserved: {}us", duration_cast<microseconds>(nextTime - dummyNow).count());
+
 			container->meets++;
 			container->delayed = false;
 			// c10::cuda::CUDACachingAllocator::emptyCache();
 		}
 
+#ifdef ENABLE_NVTX_PROFILING
 		nvtxRangeEnd(id);
+#endif
 
+		if (steady_clock::now() > endTime)
+			break;
+
+		// c10::cuda::CUDACachingAllocator::emptyCache();
 		this_thread::sleep_until(nextTime);
 		// cout << name << " " << frame << "\tstop: " << *stop << endl;
 	}
 
+	double expected, completed, met, missed;
+
+	expected = ((ceil(1000000000. / period) * (timer / 1000.)));
+	completed = frame;
+	met = container->meets;
+	missed = container->meets;
+
+	expected = max(expected, completed);
+
+	double comp, miss;
+
+	comp = 100. * completed / expected;
+	miss = 100. * (expected - met) / expected;
+
 	string temp = name +
-		"\n\tCompleted: " + to_string((container->meets + container->missed) * 1 / (ceil(1000000000.0 / period / 1)) * 100) +
-		"%" + "\tMissed   : " + to_string((1 - container->meets * 1 / (ceil(1000000000.0 / period / 1))) * 100) + "%\n";
+		"\n\tCompleted: " + to_string(comp) +
+		"%" + "\tMissed   : " + to_string(miss) + "%\n";
 	cout << temp;
+
+	loop->totalCount = expected;
+	loop->compCount = completed;
+	loop->missCount = expected - met;
 }
 
-void Loop::start(Tensor* input, SchedulerType type, int level, bool logIt)
+void Loop::start(Tensor* input, SchedulerType type, int level, bool logIt, int timer)
 {
 	_stop = false;
 
-	_th = thread(run, _name, _container, input, _period, &_stop, level, _index, type, logIt);
+	_th = thread(run, _name, _container, input, _period, &_stop, level, _index, type, logIt, timer, this);
 }
 
 void Loop::stop()

@@ -43,10 +43,16 @@ void multiplyMatrix
 	for (int i = 0; i < 1000; i++)
 	{
 		// stream = c10::cuda::getStreamFromPool();
+#ifdef ENABLE_NVTX_PROFILING
 		auto id = nvtxRangeStartA(name);
+#endif
+
 		result = torch::mm(matrix1, matrix2);
 		stream.synchronize();
+
+#ifdef ENABLE_NVTX_PROFILING
 		nvtxRangeEnd(id);
+#endif
 	}
 }
 

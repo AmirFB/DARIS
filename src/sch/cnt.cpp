@@ -1,3 +1,4 @@
+# include <main.hpp>
 
 # include <cnt.hpp>
 
@@ -138,9 +139,15 @@ Tensor MyContainer::analyze(int warmup, int repeat, Tensor input, int index, int
 {
 	for (auto op : operations[level - 1])
 	{
-		auto id = nvtxRangeStartA(op->getFullName().c_str());
+#ifdef ENABLE_NVTX_PROFILING
+		// auto id = nvtxRangeStartA(op->getFullName().c_str());
+#endif
+
 		input = op->analyze(warmup, repeat, input, index);
-		nvtxRangeEnd(id);
+
+#ifdef ENABLE_NVTX_PROFILING
+		// nvtxRangeEnd(id);
+#endif
 	}
 
 	return input;

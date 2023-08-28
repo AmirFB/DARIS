@@ -1,3 +1,5 @@
+# include <main.hpp>
+
 # include <stdio.h>
 # include <stdlib.h>
 # include <sys/stat.h>
@@ -149,7 +151,10 @@ void testConcurrency(char** argv)
 		{
 			for (int i = 0; i < contextCount; i++)
 			{
+#ifdef ENABLE_NVTX_PROFILING
 				auto id = nvtxRangeStartA(string("Context: " + to_string(i)).c_str());
+#endif
+
 				ctx[i]->select();
 
 				for (int k = 0; k < 2; k++)
@@ -159,7 +164,10 @@ void testConcurrency(char** argv)
 				}
 
 				ctx[i]->release();
+
+#ifdef ENABLE_NVTX_PROFILING
 				nvtxRangeEnd(id);
+#endif
 			}
 		}
 
@@ -174,14 +182,20 @@ void testConcurrency(char** argv)
 	vector<double> results(MODULE_COUNT / MODULE_STEP);
 
 	cudaProfilerStart();
+
+#ifdef ENABLE_NVTX_PROFILING
 	nvtxRangePush("whole");
+#endif
 
 	for (int j = MODULE_STEP; j <= MODULE_COUNT; j += MODULE_STEP)
 	{
 		cout << "Running with " << j << " network(s): ";
 
 		Scheduler::selectDefaultContext();
+
+#ifdef ENABLE_NVTX_PROFILING
 		auto id = nvtxRangeStartA(string("networks: " + to_string(j)).c_str());
+#endif
 
 		for (int i = 0; i < j; i++)
 		{
@@ -199,12 +213,17 @@ void testConcurrency(char** argv)
 
 		this_thread::sleep_for(microseconds(5000));
 
+#ifdef ENABLE_NVTX_PROFILING
 		nvtxRangeEnd(id);
+#endif
+
 		printf("%6.3lf fps\n", results[j / MODULE_STEP - 1]);
 	}
 
+#ifdef ENABLE_NVTX_PROFILING
 	nvtxRangePop();
 	cudaProfilerStop();
+#endif
 
 	cout << "Saving results\n";
 	writeToFile(string("concurrency" + to_string(mode)).c_str(), contextCount, results);
@@ -219,7 +238,7 @@ void dummThread(int index, int maxContext, int timer, double* fps)
 	int actualIndex = ctxIndex - 1;
 	ctx[actualIndex]->select();
 	c10::cuda::CUDAStream::setContextIndex(ctxIndex);
-	c10::cuda::CUDAStream str = c10::cuda::getStreamFromPool(index % 2 == 1, ctxIndex);
+	auto str = c10::cuda::getStreamFromPool(index % 2 == 1, ctxIndex);
 
 	// cout << "Priority: " << str.priority() << endl;
 	// cout << "Thread " << index << " is running on context " << ctxIndex << endl;
@@ -239,7 +258,9 @@ void dummThread(int index, int maxContext, int timer, double* fps)
 
 	while (true)
 	{
+#ifdef ENABLE_NVTX_PROFILING
 		auto id2 = nvtxRangeStartA(string("repeat: " + to_string(count + 1)).c_str());
+#endif
 
 		mdi[index]->forward(ini[index]);
 		// cuCtxSynchronize();
@@ -247,7 +268,10 @@ void dummThread(int index, int maxContext, int timer, double* fps)
 		count++;
 
 		now = steady_clock::now();
+
+#ifdef ENABLE_NVTX_PROFILING
 		nvtxRangeEnd(id2);
+#endif
 
 		if (tend <= now)
 			break;

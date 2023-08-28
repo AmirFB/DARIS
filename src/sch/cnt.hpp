@@ -71,7 +71,11 @@ namespace FGPRS
 		void addOperations(string parentName, vector<Operation> operations, int level);
 
 		virtual Tensor forward(Tensor input) { return input; }
-		virtual vector<Tensor> forwardSIMO(Tensor input) { return vector<Tensor>(); }
+		virtual vector<Tensor> forwardSIMO(Tensor input)
+		{
+			cout << "forwardSIMO" << endl;
+			return vector<Tensor>();
+		}
 
 		virtual Tensor schedule(Tensor input, int level);
 		virtual Tensor scheduleMISO(vector<Tensor> input, int level) { return Tensor(); }
@@ -109,7 +113,7 @@ namespace FGPRS
 		shared_ptr<Operation> addOperationSIMO(MyContainer* owner, string name, shared_ptr<ModuleType> module,
 			int level = 0, bool isHighPriority = false, bool isLatest = false)
 		{
-			auto operation = make_shared<Operation>(owner, name, module, false, isHighPriority);
+			auto operation = make_shared<Operation>(owner, name, module, false, isHighPriority, false);
 
 			if (level == 0 || level == 1)
 				operations[0].push_back(operation);

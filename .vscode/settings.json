@@ -106,5 +106,6 @@
 		"__memory": "cpp",
 		"charconv": "cpp",
 		"csetjmp": "cpp"
-	}
+	},
+	"C_Cpp.dimInactiveRegions": false
 }

@@ -1,3 +1,4 @@
+# include <main.hpp>
 # include <schd.hpp>
 
 # include <iostream>
@@ -11,6 +12,7 @@
 # include <cuda.h>
 # include <cudaTypedefs.h>
 # include <cuda_runtime.h>
+# include <nvToolsExt.h>
 
 # include <torch/torch.h>
 
@@ -27,7 +29,6 @@ vector<int> Scheduler::smOptions;
 MyContext* Scheduler::_contextPool;
 MyContext* Scheduler::_defaultContext;
 SchedulerType Scheduler::type;
-int Scheduler::_dummyCount;
 
 
 vector<DummyContainer> Scheduler::dummyContainer;
@@ -40,7 +41,7 @@ bool Scheduler::noDefault;
 MyContext dummyContext;
 int dummyIndex = 0;
 
-bool Scheduler::initialize(int options[], int size, SchedulerType type, int moduleCount, bool noDefault)
+bool Scheduler::initialize(int options[], int size, SchedulerType type, bool noDefault)
 {
 	bool result = true;
 	cudaDeviceProp prop;
@@ -50,7 +51,6 @@ bool Scheduler::initialize(int options[], int size, SchedulerType type, int modu
 	maxSmCount = prop.multiProcessorCount;
 	Scheduler::noDefault = noDefault;
 	contextCount = size + (noDefault ? 0 : 1);
-	_dummyCount = moduleCount - 1;
 
 	if (type == PROPOSED_SCHEDULER)
 	{
@@ -108,7 +108,7 @@ bool Scheduler::initialize(int options[], int size, SchedulerType type, int modu
 
 MyContext* Scheduler::selectContext(int smCount)
 {
-	for (int i = 0; i < smOptions.size(); i++)
+	for (int i = 0; i < contextCount; i++)
 		if (_contextPool[i].smCount >= smCount && !_contextPool[i].isBusy)
 			return &_contextPool[i];
 
@@ -159,28 +159,36 @@ float Scheduler::getMemoryPercentage()
 	return Scheduler::getFreeMemoryMB() / Scheduler::getTotalMemoryMB() * 100;
 }
 
-void Scheduler::dummyFunction(MyContext* ctx, shared_ptr<MyContainer> mod, Tensor* in)
+void Scheduler::dummyFunction(MyContext* ctx, shared_ptr<MyContainer> mod, Tensor* in, c10::cuda::CUDAStream str)
 {
 	NoGradGuard no_grad;
 	int counter = 0;
 	ctx->select();
 	c10::cuda::CUDAStream::setContextIndex(ctx->index);
-	auto str = c10::cuda::getStreamFromPool(false, ctx->index);
+	// auto str = c10::cuda::getStreamFromPool(false, ctx->index);
 
-	while (str.isBusy())
-		str = c10::cuda::getStreamFromPool(FLAGS_torch_jit_enable_new_executor, ctx->index);
+	// while (str.isBusy())
+	// 	str = c10::cuda::getStreamFromPool(FLAGS_torch_jit_enable_new_executor, ctx->index);
 
 	str.select();
 	at::cuda::setCurrentCUDAStream(str);
 
+#ifdef ENABLE_NVTX_PROFILING
+	auto innerId = nvtxRangeStartA(("dummy " + mod->_name + " " + to_string(ctx->index)).c_str());
+#endif
+
 	while (!_stopDummy)
 	{
+		at::cuda::setCurrentCUDAStream(str);
 		auto dummy = mod->forward(*in);
 		counter++;
 		// cuCtxSynchronize();
 		str.synchronize();
 	}
 
+#ifdef ENABLE_NVTX_PROFILING
+	nvtxRangeEnd(innerId);
+#endif
 	str.release();
 	ctx->release();
 }
@@ -189,27 +197,58 @@ future<void>* Scheduler::_th;
 
 void Scheduler::startDummy(MyContext* ctx, int moduleIndex)
 {
+	int first = 1;
 	int index = 0;
-	int ctxIndex = ctx->index;
+	int ctxIndex = contextCount - 1;
 	Tensor dummyOutput;
 	_stopDummy = false;
 	MyContext* dummyContext;
+
+	if (ctx->index == contextCount)
+		ctxIndex--;
 
 	_th = new future<void>[dummyContainer.size() - 1];
 
 	for (auto dummy : dummyContainer)
 	{
+		// cout << "dummy " << dummy.index << endl;
 		if (dummy.index == moduleIndex)
 			continue;
 
-		ctxIndex = ++ctxIndex % Scheduler::smOptions.size();
+		// cout << "dummy " << dummy.index << " " << ctxIndex << endl;
+		ctxIndex = (ctxIndex + Scheduler::contextCount) % Scheduler::contextCount;
+		// cout << "dummy " << dummy.index << " " << ctxIndex << endl;
 		dummyContext = Scheduler::selectContextByIndex(ctxIndex);
 		dummyContext->select();
+
+		auto str = c10::cuda::getStreamFromPool(false, dummyContext->index);
+
+		while (str.isBusy())
+			str = c10::cuda::getStreamFromPool(FLAGS_torch_jit_enable_new_executor, ctx->index);
+
+		str.select();
+		at::cuda::setCurrentCUDAStream(str);
 		dummyOutput = dummy.mod->forward(*dummy.in);
+		str.synchronize();
+		str.release();
 		dummyContext->release();
 
-		_th[index++] = async(launch::async, dummyFunction, dummyContext, dummy.mod, dummy.in);
+		// cout << "Chosen context: " << dummyContext->index << endl;
+		_th[index++] = async(launch::async, dummyFunction, dummyContext, dummy.mod, dummy.in, str);
+		ctxIndex--;
+
+		if (ctxIndex == (ctx->index - 1) && first)
+		{
+			// cout << "dummy " << dummy.index << " first " << first << endl;
+			first--;
+			ctxIndex--;
+		}
+
+		if (index == (dummyContainer.size() - 1))
+			break;
 	}
+
+	// cout << "dummy " << moduleIndex << " started" << endl;
 }
 
 void Scheduler::stopDummy()

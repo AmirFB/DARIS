@@ -1,3 +1,5 @@
+# include <main.hpp>
+
 # include <stdio.h>
 # include <stdlib.h>
 # include <sys/stat.h>
@@ -147,14 +149,19 @@ void testSpeedup(char** argv)
 	ctx->select();
 
 	cudaProfilerStart();
+
+#ifdef ENABLE_NVTX_PROFILING
 	nvtxRangePush("whole");
+#endif
 
 	for (int j = TOTAL_COUNT - 1; j >= 0; j--)
 	{
 		cout << "Running operation \"" << moduleName[j] << "\": ";
 		int count = 0;
 
+#ifdef ENABLE_NVTX_PROFILING
 		auto id = nvtxRangeStartA(moduleName[j].c_str());
+#endif
 
 		tstart = steady_clock::now();
 		tend = tstart + milliseconds(timer);
@@ -170,7 +177,10 @@ void testSpeedup(char** argv)
 				break;
 		}
 
+#ifdef ENABLE_NVTX_PROFILING
 		nvtxRangeEnd(id);
+#endif
+
 		d = now - tstart;
 		results[j] = d.count() / count * 1000000;
 		printf("%6.3lfus\n", results[j]);
@@ -180,7 +190,11 @@ void testSpeedup(char** argv)
 		// cout << "Aff: " << affinity.param.smCount.val << endl;
 	}
 
+
+#ifdef ENABLE_NVTX_PROFILING
 	nvtxRangePop();
+#endif
+
 	cudaProfilerStop();
 
 	ctx->release();

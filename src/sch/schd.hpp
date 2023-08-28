@@ -40,10 +40,9 @@ namespace FGPRS
 	private:
 		static MyContext* _defaultContext;
 		static future<void>* _th;
-		static int _dummyCount;
 
 	public:
-		static bool initialize(int[], int, SchedulerType type = NOMPS_SCHEDULER, int moduleCount = 1, bool noDefault = false);
+		static bool initialize(int[], int, SchedulerType type = NOMPS_SCHEDULER, bool noDefault = false);
 		static MyContext* selectContext(int);
 		static MyContext* selectContextByIndex(int index);
 		static MyContext* selectDefaultContext();
@@ -57,7 +56,7 @@ namespace FGPRS
 		static float getFreeMemoryGB();
 		static float getMemoryPercentage();
 
-		static void dummyFunction(MyContext* ctx, shared_ptr<MyContainer> mod, Tensor* in);
+		static void dummyFunction(MyContext* ctx, shared_ptr<MyContainer> mod, Tensor* in, c10::cuda::CUDAStream str);
 		static void startDummy(MyContext* ctx, int index);
 		static void stopDummy();
 
