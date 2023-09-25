@@ -7,7 +7,7 @@
 
 using namespace std;
 
-void writeToFile(string fileName, int value, bool comma, bool newLine)
+void writeToFile(string fileName, double value, bool comma, bool newLine)
 {
 	ofstream stream;
 	stream.open("results/" + fileName + ".csv", ios::out | ios::app);

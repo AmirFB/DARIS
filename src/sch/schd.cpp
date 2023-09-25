@@ -52,7 +52,7 @@ bool Scheduler::initialize(int options[], int size, SchedulerType type, bool noD
 	Scheduler::noDefault = noDefault;
 	contextCount = size + (noDefault ? 0 : 1);
 
-	if (type == PROPOSED_SCHEDULER)
+	// if (type == PROPOSED_SCHEDULER)
 	{
 		// _dummyModule = new Sequential[dummyCount];
 		// _dummyInput = new Tensor[dummyCount];
@@ -83,14 +83,14 @@ bool Scheduler::initialize(int options[], int size, SchedulerType type, bool noD
 			auto dummy = c10::cuda::getStreamFromPool(false, _contextPool[size].index);
 	}
 
-	else
-	{
-		smOptions = vector<int>(size);
-		_contextPool = new MyContext[size];
+	// else
+	// {
+	// 	smOptions = vector<int>(size);
+	// 	_contextPool = new MyContext[size];
 
-		dummyContext = MyContext(maxSmCount, size, true);
-		_defaultContext = &dummyContext;
-	}
+	// 	dummyContext = MyContext(maxSmCount, size, true);
+	// 	_defaultContext = &dummyContext;
+	// }
 
 	for (int i = 0; i < size; i++)
 	{

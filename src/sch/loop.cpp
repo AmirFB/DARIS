@@ -107,7 +107,7 @@ void Loop::initialize(int deadlineContextIndex, Tensor dummyInput, SchedulerType
 #endif
 
 		_container->assignExecutionTime(level, deadlineContextIndex, 0);
-		_container->assignDeadline(_period / 1000 * 0.95, level, deadlineContextIndex, 0);
+		_container->assignDeadline(_period / 1000 * 0.99, level, deadlineContextIndex, 0);
 	}
 }
 
@@ -121,10 +121,11 @@ void run(
 	steady_clock::time_point startTime, nextTime;
 	auto interval = nanoseconds((int)round(period));
 	// container->clearScheduleLogger(name);
+	MyContext* ctx;
 
 	if (type == MPS_SCHEDULER || type == PMPS_SCHEDULER || type == PMPSO_SCHEDULER)
 	{
-		auto ctx = Scheduler::selectContextByIndex(index);
+		ctx = Scheduler::selectContextByIndex(index % Scheduler::contextCount + 1);
 		ctx->select();
 	}
 
@@ -141,7 +142,8 @@ void run(
 	// int randomMicroseconds = dis(gen);
 
 	// Add the random time interval to the start time
-	startTime = steady_clock::now() + std::chrono::milliseconds(rand() % (int)round(period / 1000000));
+	srand(index);
+	startTime = steady_clock::now() + std::chrono::milliseconds(rand() % (int)round(period / 1000000 * 2));
 	auto endTime = startTime + milliseconds(timer) + interval / 10;
 
 	// startTime = steady_clock::now();// +std::chrono::milliseconds(1);
@@ -157,6 +159,17 @@ void run(
 	steady_clock::time_point dummyNow;
 
 	std::this_thread::sleep_until(startTime);
+	auto stream = at::cuda::getStreamFromPool(index % 2, 10);
+
+	if (type != PROPOSED_SCHEDULER)
+	{
+		stream = at::cuda::getStreamFromPool(index % 2, ctx->index);
+		while (stream.isBusy())
+			stream = at::cuda::getStreamFromPool(index % 2, ctx->index);
+
+		stream.select();
+		at::cuda::setCurrentCUDAStream(stream);
+	}
 
 	// while (!*stop)
 	while (true)
@@ -198,7 +211,8 @@ void run(
 		else
 		{
 			container->forward(*input);
-			cuCtxSynchronize();
+			// cuCtxSynchronize();
+			stream.synchronize();
 		}
 		// cout << name << " " << frame << endl;
 		dummyNow = steady_clock::now();

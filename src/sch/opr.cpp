@@ -546,7 +546,8 @@ Tensor Operation::runSync(Tensor input)
 
 	do
 	{
-		_stream = at::cuda::getStreamFromPool(highPriority || _parent->delayed, _chosenContext->index);
+		// _stream = at::cuda::getStreamFromPool(highPriority || _parent->delayed, _chosenContext->index);
+		_stream = at::cuda::getStreamFromPool(highPriority, _chosenContext->index);
 	}
 	while (_stream.isBusy());
 
@@ -639,10 +640,10 @@ Tensor Operation::scheduleSync(Tensor input)
 	{
 		_isException = false;
 
-		if (!isLatest && !Scheduler::anyEmptyContext())
+		if (!isLatest && !highPriority && !Scheduler::anyEmptyContext())
 		{
 			// cout << "name: " << _parent->_name << "->" << _fullName << "\t(Let's SLEEP!!!)" << endl;
-			// this_thread::sleep_until(earliestTime);
+			this_thread::sleep_until(earliestTime);
 		}
 
 		// if (!highPriority && Scheduler::anyEmptyContext() && (steady_clock::now() < earliestTime))
@@ -662,8 +663,8 @@ Tensor Operation::scheduleSync(Tensor input)
 
 	_chosenContext->select();
 
-	_parent->scheduleLogger->info("Start  {}: {} SMs -> {}",
-		_fullName.c_str(), _chosenContext->smCount, queueCount);
+	// _parent->scheduleLogger->info("Start  {}: {} SMs -> {}",
+	// 	_fullName.c_str(), _chosenContext->smCount, queueCount);
 
 	// _parent->scheduleLogger->info("Start  {}: {} SMs -> {}\t\t\tMemory Before: {}GB",
 	// 	_fullName.c_str(), _chosenContext->smCount, _chosenContext->queue.size(), Scheduler::getFreeMemoryGB());
@@ -674,15 +675,15 @@ Tensor Operation::scheduleSync(Tensor input)
 	// torch::cuda::synchronize();
 
 	// _parent->scheduleLogger->info("{}", (int)contextData[_chosenContext->index].occupiedExecutionTime);
-	_parent->scheduleLogger->info(
-		"End    {}: {} ({})-> {} + {} = {} ({})",
-		_fullName.c_str(),
-		(int)contextData[_chosenContext->index - 1].occupiedExecutionTime,
-		duration_cast<microseconds>(finishTime - startTime).count(),
-		duration_cast<microseconds>(steady_clock::now() - startTime).count(),
-		duration_cast<microseconds>(absoluteDeadline - steady_clock::now()).count(),
-		duration_cast<microseconds>(absoluteDeadline - startTime).count(),
-		(long)relativeDeadline[2]);
+	// _parent->scheduleLogger->info(
+	// 	"End    {}: {} ({})-> {} + {} = {} ({})",
+	// 	_fullName.c_str(),
+	// 	(int)contextData[_chosenContext->index - 1].occupiedExecutionTime,
+	// 	duration_cast<microseconds>(finishTime - startTime).count(),
+	// 	duration_cast<microseconds>(steady_clock::now() - startTime).count(),
+	// 	duration_cast<microseconds>(absoluteDeadline - steady_clock::now()).count(),
+	// 	duration_cast<microseconds>(absoluteDeadline - startTime).count(),
+	// 	(long)relativeDeadline[2]);
 
 	// _parent->scheduleLogger->info(
 	// 	"End    {}: {} -> {} + {} = {} ({})\t\t\tMemory  After: {}GB",

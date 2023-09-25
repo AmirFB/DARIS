@@ -5,7 +5,7 @@
 
 using namespace std;
 
-void writeToFile(string fileName, int value, bool comma, bool newLine);
+void writeToFile(string fileName, double value, bool comma, bool newLine);
 void writeToFile(const char* folder, char* fileName, int sm, double value);
 void writeToFile(const char* folder, char* fileName, int sm, vector<double> values);
 void writeToFile(const char* fileName, int sm, vector<double> values);

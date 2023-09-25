@@ -109,6 +109,9 @@ int main(int argc, char** argv)
 		if (smCount == 2)
 			maxStreams = 3;
 
+		else if (smCount == 3)
+			maxStreams = 2;
+
 		else
 			maxStreams = 2;
 
@@ -127,11 +130,13 @@ int main(int argc, char** argv)
 			totalSMs = MaxSMs * 2;;
 
 		if (distribute == 1)
+		{
 			for (int i = 0; i < smCount; i++)
 			{
-				smOptions[i] = ceil(totalSMs / smCount);
+				smOptions[i] = ceil((double)totalSMs / smCount);
 				smOptions[i] = min(smOptions[i] + smOptions[i] % 2, MaxSMs);
 			}
+		}
 
 		else
 		{
@@ -172,17 +177,29 @@ int main(int argc, char** argv)
 	else if (!strcmp(argv[1], "mps"))
 	{
 		type = MPS_SCHEDULER;
-		smCount = moduleCount;
+		smCount = atoi(argv[4]);
 		smOptions = new int[smCount];
 
 		for (int i = 0; i < smCount; i++)
 			smOptions[i] = 68;
+
+		filesystem::create_directory("results/final");
+		filesystem::create_directory(("results/final/" + to_string(smCount)).c_str());
+		fileNameComp = ("final/" + to_string(smCount) + "/Naive_Comp.csv");
+		fileNameMiss = ("final/" + to_string(smCount) + "/Naive_Miss.csv");
+
+		writeToFile(fileNameComp, 0, true, true);
+		writeToFile(fileNameComp, 0, true, false);
+
+		writeToFile(fileNameMiss, 0, true, true);
+		writeToFile(fileNameMiss, 0, true, false);
 	}
 
 	else if (!strcmp(argv[1], "pmps"))
 	{
 		type = PMPS_SCHEDULER;
 		smCount = moduleCount;
+
 		smOptions = new int[smCount];
 		distributeSMs(smOptions, 68, smCount);
 	}
@@ -253,7 +270,7 @@ int main(int argc, char** argv)
 	cout << "Warming up ..." << endl;
 
 	cout << "Memory: " << Scheduler::getFreeMemoryGB() << " GB" << endl;
-	cudaProfilerStart();
+	// cudaProfilerStart();
 
 	for (int i = 0; i < MAX_MODULE_COUNT; i++)
 		loops[i].start(&inputs[i], type, level, false, 100);
@@ -273,24 +290,28 @@ int main(int argc, char** argv)
 
 	logger->info("Started!");
 
-	// cudaProfilerStart();
+	cudaProfilerStart();
 	nvtxRangePush("whole");
 
-	int total = 0, comp = 0, miss = 0;
+	double total = 0, comp = 0, miss = 0;
 	double compPercent, missPercent;
 
-	for (int j = 20; j <= MAX_MODULE_COUNT; j++)
+	for (int j = 15; j <= MAX_MODULE_COUNT; j++)
 	{
 		cout << "........................\n";
 		cout << "Running with " << j << " modules:\n";
 
 		for (int i = 0; i < j; i++)
-			loops[i].start(&inputs[i], type, level, true, timer);
+			loops[i].start(&inputs[i], type, level, false, timer);
 
 		// this_thread::sleep_for(milliseconds((int)(1000 + 1000 / freq)));
 
 		// for (int i = 0; i < j; i++)
 		// 	loops[i].stop();
+
+		total = 0;
+		comp = 0;
+		miss = 0;
 
 		for (int i = 0; i < j; i++)
 		{
@@ -306,6 +327,7 @@ int main(int argc, char** argv)
 
 		writeToFile(fileNameComp, compPercent, j != MAX_MODULE_COUNT, false);
 		writeToFile(fileNameMiss, missPercent, j != MAX_MODULE_COUNT, false);
+		cout << "fileNames: " << fileNameComp << " " << fileNameMiss << endl;
 	}
 
 	cout << "........................\n";
