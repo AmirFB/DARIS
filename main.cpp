@@ -1,413 +1,262 @@
-# include <main.hpp>
+#include <torch/torch.h>
+#include <iostream>
+#include <vector>
+#include <chrono>
 
-# include <iostream>
-# include <fstream>
-# include <iomanip>
-# include <thread>
-# include <pthread.h>
-# include <chrono>
-# include <string>
-# include <cstdlib>
-# include <future>
-# include <sys/stat.h>
-# include <random>
-# include <ctime>
-# include <filesystem>
-# include "spdlog/spdlog.h"
-# include "spdlog/sinks/basic_file_sink.h"
-
-# include <torch/torch.h>
-# include <torch/script.h>
-# include <c10/cuda/CUDAStream.h>
-# include <ATen/cuda/CUDAContext.h>
-# include <c10/cuda/CUDACachingAllocator.h>
-
-# include <cuda.h>
-# include <cudaTypedefs.h>
-# include <cuda_runtime.h>
-# include <cuda_profiler_api.h>
-# include <nvToolsExt.h>
-
-# include <loop.hpp>
-# include <schd.hpp>
-# include <cnt.hpp>
-
-# include <cif10.hpp>
-# include <resnet.hpp>
-
-# include <tests.hpp>
-
-# include <stdio.h>
-# include <stdlib.h>
-# include <unistd.h>
-# include <sys/time.h>
-# include <sched.h>
-# include <deeplab.hpp>
-
-# include <c10/cuda/CUDACachingAllocator.h>
-
-using namespace std;
-using namespace chrono;
-using namespace spdlog;
-using namespace torch;
-using namespace torch::nn;
-using namespace FGPRS;
-
-# define PRELIMINNARY 0
-# define SCHEDULER 		1
-# define MODE					SCHEDULER
-
-# define MAX_MODULE_COUNT		30
-
-shared_ptr<logger> logger;
-
-void distributeSMs(int* array, int total, int count);
-vector<double> generateUtilization(int count, double total);
-
-int main(int argc, char** argv)
+// Define Basic Block
+struct SimpleBlock : torch::nn::Module
 {
-# if MODE == SCHEDULER
-	srand(time(nullptr));
-	auto logger = spdlog::basic_logger_mt("main_logger", "log.log");
-	logger->set_pattern("[%S.%f] %v");
-	NoGradGuard no_grad;
-	int level = 3;
-	int moduleCount, dummyCount = 0;
-	double frequency;
+	torch::nn::Conv2d _conv1{ nullptr }, _conv2{ nullptr };
+	torch::nn::BatchNorm2d _bn1{ nullptr }, _bn2{ nullptr };
+	torch::nn::Sequential _downsample{ nullptr };
 
-	SchedulerType type;
-	int* smOptions;
-	int smCount;
-	int mode;
-	int distribute;
-	int maxStreams;
-	const int MaxSMs = 68;
-	int totalSMs;
-	int timer;
-	string fileNameComp, fileNameMiss;
-
-	if (!strcmp(argv[1], "proposed") && !strcmp(argv[2], "clear"))
+	SimpleBlock(int64_t in_channels, int64_t out_channels, int64_t stride = 1, torch::nn::Sequential downsample = torch::nn::Sequential{ nullptr })
 	{
-		filesystem::remove_all("results/final");
-		return 0;
+		_conv1 = register_module("conv1", torch::nn::Conv2d(torch::nn::Conv2dOptions(in_channels, out_channels, 3).stride(stride).padding(1).bias(false)));
+		_bn1 = register_module("bn1", torch::nn::BatchNorm2d(out_channels));
+		_conv2 = register_module("conv2", torch::nn::Conv2d(torch::nn::Conv2dOptions(out_channels, out_channels, 3).stride(1).padding(1).bias(false)));
+		_bn2 = register_module("bn2", torch::nn::BatchNorm2d(out_channels));
+
+		if (!downsample.is_empty())
+			_downsample = register_module("downsample", downsample);
 	}
 
-	// moduleCount = atoi(argv[2]);
-	frequency = atof(argv[2]);
-	timer = atoi(argv[3]);
-	moduleCount = 5;
-	cout << "Initializing scheduler ..." << endl;
-
-	if (!strcmp(argv[1], "proposed"))
+	torch::Tensor forward(torch::Tensor x)
 	{
-		type = PROPOSED_SCHEDULER;
+		torch::Tensor residual = x;
+		// printf("Input dimenstions: %d, %d\n", x.size(1), x.size(2));
+		x = torch::relu(_bn1(_conv1(x)));
+		x = _bn2(_conv2(x));
 
-		mode = atoi(argv[4]);
-		distribute = atoi(argv[5]);
-		smCount = atoi(argv[6]);
+		if (!_downsample.is_empty())
+			residual = _downsample->forward(residual);
 
-		if (smCount == 2)
-			maxStreams = 3;
-
-		else if (smCount == 3)
-			maxStreams = 2;
-
-		else
-			maxStreams = 2;
-
-		MyContext::maxParallel = maxStreams;
-		dummyCount = min(smCount * maxStreams - 1, moduleCount - 1);
-
-		smOptions = new int[smCount];
-
-		if (mode == 1)
-			totalSMs = MaxSMs;
-
-		else if (mode == 2)
-			totalSMs = MaxSMs * 1.5;
-
-		else
-			totalSMs = MaxSMs * 2;;
-
-		if (distribute == 1)
-		{
-			for (int i = 0; i < smCount; i++)
-			{
-				smOptions[i] = ceil((double)totalSMs / smCount);
-				smOptions[i] = min(smOptions[i] + smOptions[i] % 2, MaxSMs);
-			}
-		}
-
-		else
-		{
-			int divider = smCount * (smCount + 1) / 2;
-
-			for (int i = 0; i < smCount; i++)
-			{
-				smOptions[i] = ceil((i + 1) * totalSMs / divider);
-				smOptions[i] = min(smOptions[i] + smOptions[i] % 2, MaxSMs);
-			}
-		}
-
-		totalSMs = 0;
-
-		for (int i = 0; i < smCount; i++)
-			totalSMs += smOptions[i];
-
-		cout << "Simulation Parameters:" << endl
-			<< "\tMode: " << (mode == 1 ? "1.0x" : (mode == 2 ? "1.5x" : "2.0x")) << endl
-			<< "\tDistribute: " << (distribute == 1 ? "Equal" : "Stepwise") << endl
-			<< "\tSM Count: " << smCount << endl
-			<< "\tMax Streams: " << maxStreams << endl
-			<< "\tTotal SMs: " << totalSMs << endl
-			<< "----------------------------------------" << endl;
-
-		filesystem::create_directory("results/final");
-		filesystem::create_directory(("results/final/" + to_string(smCount)).c_str());
-		fileNameComp = ("final/" + to_string(smCount) + "/" + (mode == 1 ? "1.0x" : (mode == 2 ? "1.5x" : "2.0x")) + "_" + (distribute == 1 ? "Equal" : "Stepwise") + "_Comp.csv");
-		fileNameMiss = ("final/" + to_string(smCount) + "/" + (mode == 1 ? "1.0x" : (mode == 2 ? "1.5x" : "2.0x")) + "_" + (distribute == 1 ? "Equal" : "Stepwise") + "_Miss.csv");
-
-		writeToFile(fileNameComp, mode, true, true);
-		writeToFile(fileNameComp, distribute, true, false);
-
-		writeToFile(fileNameMiss, mode, true, true);
-		writeToFile(fileNameMiss, distribute, true, false);
+		x += residual;
+		x = torch::relu(x);
+		// printf("Output dimenstions: %d, %d\n", x.size(1), x.size(2));
+		return x;
 	}
+};
 
-	else if (!strcmp(argv[1], "mps"))
-	{
-		type = MPS_SCHEDULER;
-		smCount = atoi(argv[4]);
-		smOptions = new int[smCount];
-
-		for (int i = 0; i < smCount; i++)
-			smOptions[i] = 68;
-
-		filesystem::create_directory("results/final");
-		filesystem::create_directory(("results/final/" + to_string(smCount)).c_str());
-		fileNameComp = ("final/" + to_string(smCount) + "/Naive_Comp.csv");
-		fileNameMiss = ("final/" + to_string(smCount) + "/Naive_Miss.csv");
-
-		writeToFile(fileNameComp, 0, true, true);
-		writeToFile(fileNameComp, 0, true, false);
-
-		writeToFile(fileNameMiss, 0, true, true);
-		writeToFile(fileNameMiss, 0, true, false);
-	}
-
-	else if (!strcmp(argv[1], "pmps"))
-	{
-		type = PMPS_SCHEDULER;
-		smCount = moduleCount;
-
-		smOptions = new int[smCount];
-		distributeSMs(smOptions, 68, smCount);
-	}
-
-	else if (!strcmp(argv[1], "pmpso"))
-	{
-		type = PMPSO_SCHEDULER;
-		smCount = moduleCount;
-		smOptions = new int[smCount];
-		distributeSMs(smOptions, max(68 * (smCount / 2 + 0.5), 68.0), smCount);
-	}
-
-	else if (!strcmp(argv[1], "nomps"))
-	{
-		type = NOMPS_SCHEDULER;
-		smCount = 1;
-		smOptions = new int[1] {68};
-	}
-
-	Scheduler::initialize(smOptions, smCount, type, true);
-	MyContext::selectDefault();
-
-	Tensor inputs[MAX_MODULE_COUNT];
-	shared_ptr<MyContainer> mods[MAX_MODULE_COUNT];
-	Loop loops[MAX_MODULE_COUNT];
-
-	cout << "Initializing modules ..." << endl;
-	filesystem::remove_all("logs");
-
-	string name, freqStr;
-
-	// cudaProfilerStart();
-
-	for (int i = 0; i < MAX_MODULE_COUNT; i++)
-	{
-		stringstream stream;
-		stream << fixed << setprecision(2) << frequency;
-		freqStr = stream.str();
-
-		name = "resnet" + to_string(i + 1);
-
-		inputs[i] = torch::randn({ 1, 3, 224, 224 }, kCUDA);
-		mods[i] = resnet18(1000);
-
-		loops[i] = Loop(name, mods[i], frequency, i);
-		loops[i].prepare();
-	}
-
-	for (size_t i = 0; i < MAX_MODULE_COUNT; i++)
-		Scheduler::dummyContainer.push_back(DummyContainer{ mods[i], &inputs[i], i });
-
-	random_shuffle(Scheduler::dummyContainer.begin(), Scheduler::dummyContainer.end());
-	Scheduler::dummyContainer.resize(dummyCount + 1);
-
-	// cudaProfilerStart();
-
-	for (int i = 0; i < MAX_MODULE_COUNT; i++)
-	{
-		cout << "Initializing " << mods[i]->_name << " ..." << endl;
-		loops[i].initialize(smCount - 1, inputs[i], type, level);
-	}
-
-	// cudaProfilerStop();
-	// return 0;
-
-	cout << "Initializing modules finished!" << endl << endl << endl << endl << endl;
-
-	cout << "Warming up ..." << endl;
-
-	cout << "Memory: " << Scheduler::getFreeMemoryGB() << " GB" << endl;
-	// cudaProfilerStart();
-
-	for (int i = 0; i < MAX_MODULE_COUNT; i++)
-		loops[i].start(&inputs[i], type, level, false, 100);
-
-	// this_thread::sleep_for(milliseconds(100));
-
-	for (int i = 0; i < MAX_MODULE_COUNT; i++)
-		loops[i].stop();
-
-	for (int i = 0; i < MAX_MODULE_COUNT; i++)
-		loops[i].wait();
-
-	cout << endl << endl << endl << endl << endl;
-
-	cout << "Memory: " << Scheduler::getFreeMemoryGB() << " GB" << endl;
-	cout << "Here we go ...\n";
-
-	logger->info("Started!");
-
-	cudaProfilerStart();
-	nvtxRangePush("whole");
-
-	double total = 0, comp = 0, miss = 0;
-	double compPercent, missPercent;
-
-	for (int j = 15; j <= MAX_MODULE_COUNT; j++)
-	{
-		cout << "........................\n";
-		cout << "Running with " << j << " modules:\n";
-
-		for (int i = 0; i < j; i++)
-			loops[i].start(&inputs[i], type, level, false, timer);
-
-		// this_thread::sleep_for(milliseconds((int)(1000 + 1000 / freq)));
-
-		// for (int i = 0; i < j; i++)
-		// 	loops[i].stop();
-
-		total = 0;
-		comp = 0;
-		miss = 0;
-
-		for (int i = 0; i < j; i++)
-		{
-			loops[i].wait();
-
-			total += loops[i].totalCount;
-			comp += loops[i].compCount;
-			miss += loops[i].missCount;
-		}
-
-		compPercent = 100. * comp / total;
-		missPercent = 100. * miss / total;
-
-		writeToFile(fileNameComp, compPercent, j != MAX_MODULE_COUNT, false);
-		writeToFile(fileNameMiss, missPercent, j != MAX_MODULE_COUNT, false);
-		cout << "fileNames: " << fileNameComp << " " << fileNameMiss << endl;
-	}
-
-	cout << "........................\n";
-
-	nvtxRangePop();
-	cudaProfilerStop();
-
-	logger->info("Finished!");
-	this_thread::sleep_for(milliseconds(100));
-	torch::cuda::synchronize();
-	cudaDeviceSynchronize();
-	cout << "-------------------------------------------------------------------------------\n\n";
-
-# elif MODE == PRELIMINARY
-
-	char* op = argv[1];
-	mkdir("results", 0777);
-
-	if (!strcmp(op, "clear"))
-	{
-		cout << "Removing previous results of \"" << argv[2] << "\" simulation\n";
-
-		if (!strcmp(op, "concurrency"))
-		{
-			remove(string("results/concurrency1.csv").c_str());
-			remove(string("results/concurrency2.csv").c_str());
-			remove(string("results/concurrency3.csv").c_str());
-			remove(string("results/concurrency4.csv").c_str());
-			remove(string("results/concurrency5.csv").c_str());
-		}
-
-		else
-			remove((string("results/") + string(argv[2]) + ".csv").c_str());
-	}
-
-	else if (!strcmp(op, "speedup"))
-		testSpeedup(&argv[2]);
-
-	else if (!strcmp(op, "concurrency"))
-		testConcurrency(&argv[2]);
-
-# endif
-}
-
-void distributeSMs(int* array, int total, int count)
+// Define Bottleneck Block
+struct BottleneckBlock : torch::nn::Module
 {
-	int minPer, rem;
+	torch::nn::Conv2d _conv1{ nullptr }, _conv2{ nullptr }, _conv3{ nullptr };
+	torch::nn::BatchNorm2d _bn1{ nullptr }, _bn2{ nullptr }, _bn3{ nullptr };
+	torch::nn::Sequential _downsample{ nullptr };
 
-	minPer = total / count - (total / count) % 2;
-	rem = total - count * minPer;
-
-	for (int i = 0; i < count; i++)
+	BottleneckBlock(int64_t in_channels, int64_t out_channels, int64_t stride = 1, torch::nn::Sequential downsample = torch::nn::Sequential())
 	{
-		array[i] = minPer;
+		_conv1 = register_module("conv1", torch::nn::Conv2d(torch::nn::Conv2dOptions(in_channels, out_channels / 4, 1).bias(false)));
+		_bn1 = register_module("bn1", torch::nn::BatchNorm2d(out_channels / 4));
+		_conv2 = register_module("conv2", torch::nn::Conv2d(torch::nn::Conv2dOptions(out_channels / 4, out_channels / 4, 3).stride(stride).padding(1).bias(false)));
+		_bn2 = register_module("bn2", torch::nn::BatchNorm2d(out_channels / 4));
+		_conv3 = register_module("conv3", torch::nn::Conv2d(torch::nn::Conv2dOptions(out_channels / 4, out_channels, 1).bias(false)));
+		_bn3 = register_module("bn3", torch::nn::BatchNorm2d(out_channels));
 
-		if (rem > 0)
+		if (!downsample.is_empty())
+			_downsample = register_module("downsample", downsample);
+	}
+
+	torch::Tensor forward(torch::Tensor x)
+	{
+		torch::Tensor residual = x;
+
+		x = torch::relu(_bn1(_conv1(x)));
+		x = torch::relu(_bn2(_conv2(x)));
+		x = _bn3(_conv3(x));
+
+		if (!_downsample.is_empty())
+			residual = _downsample->forward(residual);
+
+		x += residual;
+		x = torch::relu(x);
+
+		return x;
+	}
+};
+
+// Define FCSoftmaxModule
+struct FCSoftmaxModule : torch::nn::Module
+{
+	torch::nn::Linear fc{ nullptr };
+
+	FCSoftmaxModule(int64_t in_features, int64_t num_classes)
+	{
+		fc = register_module("fc", torch::nn::Linear(in_features, num_classes));
+	}
+
+	torch::Tensor forward(torch::Tensor x)
+	{
+		x = torch::adaptive_avg_pool2d(x, { 1, 1 });
+		x = x.view({ x.size(0), -1 });
+		x = fc(x);
+		// return torch::log_softmax(x, /*dim=*/1);
+		return x;
+	}
+};
+
+// Define ResNet Model
+struct ResNet : torch::nn::Module
+{
+	int64_t in_channels{ 3 };  // For RGB images
+	int64_t num_classes{ 1000 };
+	torch::nn::Sequential _layer1{ nullptr };
+	torch::nn::Sequential _layer2{ nullptr };
+	torch::nn::Sequential _layer3{ nullptr };
+	torch::nn::Sequential _layer4{ nullptr };
+
+	ResNet(const std::vector<int>& layer_sizes, int block_type, const std::vector<int>& num_blocks)
+	{
+		// Create layer1 using make_layer
+		auto layer1 = torch::nn::Sequential(
+			torch::nn::Conv2d(torch::nn::Conv2dOptions(in_channels, 64, 7).stride(2).padding(3).bias(false)),
+			torch::nn::BatchNorm2d(64),
+			torch::nn::ReLU(),
+			torch::nn::MaxPool2d(torch::nn::MaxPool2dOptions(3).stride(2).padding(1))
+		);
+
+		layer1 = make_layer(layer1, layer_sizes[0], block_type, num_blocks[0]);
+		_layer1 = register_module("layer1", layer1);
+
+		// // Layer2
+		auto layer2 = torch::nn::Sequential();
+		layer2 = make_layer(layer2, layer_sizes[1], block_type, num_blocks[1], 2);
+		_layer2 = register_module("layer2", layer2);
+
+		/// Layer3
+		auto layer3 = torch::nn::Sequential();
+		layer3 = make_layer(layer3, layer_sizes[2], block_type, num_blocks[2], 2);
+		_layer3 = register_module("layer3", layer3);
+
+		// Create layer4 using make_layer
+		auto layer4 = torch::nn::Sequential();
+		layer4 = make_layer(layer4, layer_sizes[3], block_type, num_blocks[3], 2);
+		layer4->push_back(FCSoftmaxModule(layer_sizes[3], num_classes));
+		_layer4 = register_module("layer4", layer4);
+	}
+
+	torch::nn::Sequential make_layer(torch::nn::Sequential& layer, int64_t channels, int block_type, int num_blocks, int64_t stride = 1)
+	{
+		auto downsample = torch::nn::Sequential{ nullptr };
+		int64_t in_channels = channels == 64 ? 64 : channels / 2;
+
+		if (stride != 1 || in_channels != channels)
+			downsample = torch::nn::Sequential(
+				torch::nn::Conv2d(torch::nn::Conv2dOptions(in_channels, channels, 1).stride(stride).bias(false)),
+				torch::nn::BatchNorm2d(channels)
+			);
+
+		layer->push_back(SimpleBlock(in_channels, channels, stride, downsample));
+
+		in_channels = channels;
+		stride = 1;  // Only the first block has stride > 1
+
+		for (int i = 0; i < (num_blocks - 1); ++i)
 		{
-			array[i] += 2;
-			rem -= 2;
+			if (block_type == 18 || block_type == 34)
+				layer->push_back(SimpleBlock(in_channels, channels, stride));
+
+			else
+				layer->push_back(BottleneckBlock(in_channels, channels, stride));
 		}
+
+		return layer;
+	}
+
+	torch::Tensor forward(torch::Tensor& x)
+	{
+		x = _layer1->forward(x);//printf("layer 1 done\n\n");
+		x = _layer2->forward(x);//printf("layer 2 done\n\n");
+		x = _layer3->forward(x);//printf("layer 3 done\n\n");
+		return _layer4->forward(x);//printf("layer 4 done\n\n");
+
+		// return x;
+	}
+};
+
+// Factory function to create ResNet instances
+ResNet create_resnet(int resnet_type)
+{
+	switch (resnet_type)
+	{
+		case 18:
+			return ResNet({ 64, 128, 256, 512 }, 18, { 2, 2, 2, 2 });
+		case 34:
+			return ResNet({ 64, 128, 256, 512 }, 34, { 3, 5, 6, 3 });
+		case 50:
+			return ResNet({ 256, 512, 1024, 2048 }, 50, { 3, 4, 6, 3 });
+		case 101:
+			return ResNet({ 256, 512, 1024, 2048 }, 101, { 3, 5, 23, 3 });
+		case 152:
+			return ResNet({ 256, 512, 1024, 2048 }, 152, { 3, 8, 36, 3 });
+		default:
+			throw std::runtime_error("Unsupported ResNet type");
 	}
 }
 
-vector<double> generateUtilization(int count, double total)
+// Benchmark function
+void benchmark_resnet(int64_t input_size, int64_t batch_size, int64_t num_iterations, int resnet_type)
 {
-	// vector<double> result(count);
-	// random_device rd;
-	// std::mt19937 gen(rd());
-	// uniform_real_distribution<double> dis(0.05, 0.9);
+	torch::NoGradGuard no_grad;
+	// Check if CUDA is available
+	if (!torch::cuda::is_available())
+	{
+		std::cerr << "CUDA is not available. Exiting." << std::endl;
+		return;
+	}
 
-	// double sum = 0;
+	// Set the device to CUDA
+	torch::Device device(torch::kCUDA);
 
-	// for (int i = 0; i < count; i++)
-	// {
-	// 	result[i] = dis(gen);
-	// 	sum += result[i];
-	// }
+	// Create a ResNet model
+	ResNet model = create_resnet(resnet_type);
+	model.to(device);  // Move the model to CUDA
 
-	// for (int i = 0; i < count; i++)
-	// 	result[i] = result[i] / sum * total;
+	// Dummy input tensor
+	torch::Tensor input = torch::randn({ batch_size, 3, input_size, input_size });
+	input = input.to(device);  // Move the input tensor to CUDA
 
-	// return result;
+	// Warm-up
+	for (int i = 0; i < 5; ++i)
+	{
+		torch::NoGradGuard no_grad;
+		model.forward(input);
+	}
+
+	// Benchmark
+	torch::Tensor dummy;
+	auto start = std::chrono::high_resolution_clock::now();
+	for (int i = 0; i < num_iterations; ++i)
+	{
+		torch::NoGradGuard no_grad;
+		dummy = model.forward(input);
+	}
+	auto end = std::chrono::high_resolution_clock::now();
+
+	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+	double fps = static_cast<double>(num_iterations) / duration.count() * 1000;
+
+	std::cout << "ResNet-" << resnet_type << " - Input Size: " << input_size << "x" << input_size
+		<< ", Batch Size: " << batch_size << ", FPS: " << fps << std::endl;
+}
+
+int main()
+{
+	printf("Let's start\n");
+	// ResNet variations to benchmark
+	std::vector<int> resnet_types = { 18, 34 };//, 50, 101, 152 };
+
+	// Common benchmark parameters
+	int64_t input_size = 224;
+	int64_t batch_size = 1;
+	int64_t num_iterations = 100;
+
+	for (int resnet_type : resnet_types)
+	{
+		printf("resnet_type: %d\n", resnet_type);
+		benchmark_resnet(input_size, batch_size, num_iterations, resnet_type);
+	}
+
+	return 0;
 }

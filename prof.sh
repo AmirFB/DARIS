@@ -23,7 +23,10 @@ export PYTORCH_CUDA_ALLOC_CONF=backend:cudaMallocAsync,garbage_collection_thresh
 
 # /usr/local/cuda/bin/nsys profile -w true --trace=cuda,nvtx,osrt,cudnn,cublas,opengl,openacc,openmp,mpi,vulkan -s cpu --stats=true --cudabacktrace=true --cuda-memory-usage=true --capture-range=cudaProfilerApi --gpu-metrics-device=0 --gpu-metrics-set=0 --gpu-metrics-frequency=10 build/fgprs concurrency 4 5 1000
 
-/usr/local/cuda/bin/nsys profile -w true --trace=cuda,nvtx,osrt,cudnn,cublas,opengl,openacc,openmp,mpi,vulkan -s cpu --stats=true --cudabacktrace=true --cuda-memory-usage=true --capture-range=cudaProfilerApi --gpu-metrics-device=0 --gpu-metrics-set=0 --gpu-metrics-frequency=20000 build/fgprs proposed 30 500 3 1 3
+# /usr/local/cuda/bin/nsys profile -w true --trace=cuda,nvtx,osrt,cudnn,cublas,opengl,openacc,openmp,mpi,vulkan -s cpu --stats=true --cudabacktrace=true --cuda-memory-usage=true --capture-range=cudaProfilerApi --gpu-metrics-device=0 --gpu-metrics-set=0 --gpu-metrics-frequency=20000 build/fgprs proposed 30 500 3 1 3
+
+/usr/local/cuda/bin/nsys profile -w true --trace=cuda,nvtx,osrt,cudnn,cublas,opengl,openacc,openmp,mpi,vulkan -s cpu --stats=true --cudabacktrace=true --cuda-memory-usage=true --gpu-metrics-device=0 --gpu-metrics-set=0 --gpu-metrics-frequency=20000 build/fgprs proposed 30 500 3 1 3
+
 echo quit | nvidia-cuda-mps-control
 
 # --capture-range=cudaProfilerApi
