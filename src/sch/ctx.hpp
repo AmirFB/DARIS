@@ -14,6 +14,7 @@
 # include <c10/cuda/CUDAStream.h>
 
 using namespace std;
+using namespace c10::cuda;
 
 namespace FGPRS
 {
@@ -25,37 +26,29 @@ namespace FGPRS
 		mutable mutex* _pMutex;
 		mutable mutex* _pQueueMutex;
 		unique_lock<mutex> _lock;
-		int lockCount = 0;
 		mutable condition_variable* cv;
 		bool _changed = true;
 		steady_clock::time_point _finishTime;
-		vector<c10::cuda::CUDAStream> _streams;
+		vector<CUDAStream> _streams;
+		shared_ptr<Operation> _headOperation;
 
 	public:
-		unsigned smCount;
+		vector<shared_ptr<MyContainer>> highContainers, lowContainers;
+		static int streamCount;
+		static int smCount;
 		int index = -1;
-		vector<Operation*> queue;
-		static int maxParallel;
-		bool isBusy = false;
+		vector<shared_ptr<Operation>> highLast, highDelayed, highOther, lowLast, lowDelayed, lowOther;
 
 		MyContext() {}
-		MyContext(unsigned, int, bool = false);
+		MyContext(int index, bool isDefault = false);
 		bool initialize();
-		// c10::cuda::CUDAStream* select();
-		// static c10::cuda::CUDAStream* selectDefault();
 		bool select();
 		static bool selectDefault();
 		bool release();
-		void lock();
-		void lock(Operation* operation);
-		void unlock();
-		void unlock(Operation* operation);
-		bool isEmpty();
-		bool hasCapacity();
 
 		void queueOperation(Operation* operation);
 		void dequeueOperation(Operation* operation);
-		steady_clock::time_point getFinishTime();
+		steady_clock::time_point finishTime();
 	};
 }
 
