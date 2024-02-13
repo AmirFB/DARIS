@@ -1,262 +1,220 @@
-#include <torch/torch.h>
-#include <iostream>
-#include <vector>
-#include <chrono>
+# include <iostream>
+# include <vector>
+# include <cuda_profiler_api.h>
 
-// Define Basic Block
-struct SimpleBlock : torch::nn::Module
+# include "cnt.hpp"
+# include "schd.hpp"
+# include "resnet.hpp"
+# include "loop.hpp"
+
+using namespace std;
+using namespace FGPRS;
+
+int contextCount, smCount, moduleCount, highCount, lowCount, streamCount;
+double oversubscription, highPercentage;
+vector<shared_ptr<MyContainer>> highNetworks, lowNetworks, networks;
+vector<shared_ptr<Loop>> loops;
+int timer, windowSize;
+
+const int warmup = 5, repeat = 10;
+
+int main(int argc, char* argv[])
 {
-	torch::nn::Conv2d _conv1{ nullptr }, _conv2{ nullptr };
-	torch::nn::BatchNorm2d _bn1{ nullptr }, _bn2{ nullptr };
-	torch::nn::Sequential _downsample{ nullptr };
+	// cudaProfilerStart();
+	contextCount = atoi(argv[1]);
+	oversubscription = atof(argv[2]);
+	moduleCount = atoi(argv[3]);
+	highPercentage = atof(argv[4]) / 100.0;
+	streamCount = atoi(argv[5]);
+	timer = atoi(argv[6]);
+	windowSize = atoi(argv[7]);
 
-	SimpleBlock(int64_t in_channels, int64_t out_channels, int64_t stride = 1, torch::nn::Sequential downsample = torch::nn::Sequential{ nullptr })
+	// moduleCount = contextCount * streamCount;
+
+	smCount = (int)ceil(68 * oversubscription / contextCount);
+	smCount += smCount % 2;
+	smCount = smCount > 68 ? 68 : smCount;
+
+	highCount = (int)ceil(moduleCount * highPercentage);
+	lowCount = moduleCount - highCount;
+	MyContext::streamCount = streamCount;
+	ModuleTracker::windowSize = windowSize;
+
+	cout << "Context count: " << contextCount << endl;
+	cout << "SM count: " << smCount << endl;
+	cout << "Module count: " << moduleCount << endl;
+	cout << "High priority module count: " << highCount << endl;
+	cout << "Low priority module count: " << lowCount << endl;
+	cout << "Stream count: " << streamCount << endl;
+	cout << "-----------------------------" << endl;
+
+	cuInit(0);
+
+	auto result = Scheduler::initialize(contextCount, smCount);
+
+	if (!result)
 	{
-		_conv1 = register_module("conv1", torch::nn::Conv2d(torch::nn::Conv2dOptions(in_channels, out_channels, 3).stride(stride).padding(1).bias(false)));
-		_bn1 = register_module("bn1", torch::nn::BatchNorm2d(out_channels));
-		_conv2 = register_module("conv2", torch::nn::Conv2d(torch::nn::Conv2dOptions(out_channels, out_channels, 3).stride(1).padding(1).bias(false)));
-		_bn2 = register_module("bn2", torch::nn::BatchNorm2d(out_channels));
-
-		if (!downsample.is_empty())
-			_downsample = register_module("downsample", downsample);
+		cout << "Failed to initialize scheduler." << endl;
+		return 0;
 	}
 
-	torch::Tensor forward(torch::Tensor x)
+	auto ctx = Scheduler::selectDefaultContext();
+	ctx->select();
+
+	for (int i = 0; i < highCount; i++)
 	{
-		torch::Tensor residual = x;
-		// printf("Input dimenstions: %d, %d\n", x.size(1), x.size(2));
-		x = torch::relu(_bn1(_conv1(x)));
-		x = _bn2(_conv2(x));
-
-		if (!_downsample.is_empty())
-			residual = _downsample->forward(residual);
-
-		x += residual;
-		x = torch::relu(x);
-		// printf("Output dimenstions: %d, %d\n", x.size(1), x.size(2));
-		return x;
-	}
-};
-
-// Define Bottleneck Block
-struct BottleneckBlock : torch::nn::Module
-{
-	torch::nn::Conv2d _conv1{ nullptr }, _conv2{ nullptr }, _conv3{ nullptr };
-	torch::nn::BatchNorm2d _bn1{ nullptr }, _bn2{ nullptr }, _bn3{ nullptr };
-	torch::nn::Sequential _downsample{ nullptr };
-
-	BottleneckBlock(int64_t in_channels, int64_t out_channels, int64_t stride = 1, torch::nn::Sequential downsample = torch::nn::Sequential())
-	{
-		_conv1 = register_module("conv1", torch::nn::Conv2d(torch::nn::Conv2dOptions(in_channels, out_channels / 4, 1).bias(false)));
-		_bn1 = register_module("bn1", torch::nn::BatchNorm2d(out_channels / 4));
-		_conv2 = register_module("conv2", torch::nn::Conv2d(torch::nn::Conv2dOptions(out_channels / 4, out_channels / 4, 3).stride(stride).padding(1).bias(false)));
-		_bn2 = register_module("bn2", torch::nn::BatchNorm2d(out_channels / 4));
-		_conv3 = register_module("conv3", torch::nn::Conv2d(torch::nn::Conv2dOptions(out_channels / 4, out_channels, 1).bias(false)));
-		_bn3 = register_module("bn3", torch::nn::BatchNorm2d(out_channels));
-
-		if (!downsample.is_empty())
-			_downsample = register_module("downsample", downsample);
+		highNetworks.push_back(resnet18(1000));
+		highNetworks[i]->initialize(highNetworks[i], "resH" + to_string(i + 1), true);
+		highNetworks[i]->setFrequency(30);
+		highNetworks[i]->inputSize = 224;
+		networks.push_back(highNetworks[i]);
 	}
 
-	torch::Tensor forward(torch::Tensor x)
+	for (int i = 0; i < lowCount; i++)
 	{
-		torch::Tensor residual = x;
-
-		x = torch::relu(_bn1(_conv1(x)));
-		x = torch::relu(_bn2(_conv2(x)));
-		x = _bn3(_conv3(x));
-
-		if (!_downsample.is_empty())
-			residual = _downsample->forward(residual);
-
-		x += residual;
-		x = torch::relu(x);
-
-		return x;
-	}
-};
-
-// Define FCSoftmaxModule
-struct FCSoftmaxModule : torch::nn::Module
-{
-	torch::nn::Linear fc{ nullptr };
-
-	FCSoftmaxModule(int64_t in_features, int64_t num_classes)
-	{
-		fc = register_module("fc", torch::nn::Linear(in_features, num_classes));
+		lowNetworks.push_back(resnet18(1000));
+		lowNetworks[i]->initialize(lowNetworks[i], "resL" + to_string(i + 1), false);
+		lowNetworks[i]->setFrequency(30);
+		lowNetworks[i]->inputSize = 224;
+		networks.push_back(lowNetworks[i]);
 	}
 
-	torch::Tensor forward(torch::Tensor x)
+	cout << "Scheduler initialized." << endl;
+	Scheduler::populateModules(highNetworks, lowNetworks);
+
+	for (auto mod : networks)
+		mod->analyzeBCET(1, 1);
+
+	for (auto mod : networks)
 	{
-		x = torch::adaptive_avg_pool2d(x, { 1, 1 });
-		x = x.view({ x.size(0), -1 });
-		x = fc(x);
-		// return torch::log_softmax(x, /*dim=*/1);
-		return x;
-	}
-};
-
-// Define ResNet Model
-struct ResNet : torch::nn::Module
-{
-	int64_t in_channels{ 3 };  // For RGB images
-	int64_t num_classes{ 1000 };
-	torch::nn::Sequential _layer1{ nullptr };
-	torch::nn::Sequential _layer2{ nullptr };
-	torch::nn::Sequential _layer3{ nullptr };
-	torch::nn::Sequential _layer4{ nullptr };
-
-	ResNet(const std::vector<int>& layer_sizes, int block_type, const std::vector<int>& num_blocks)
-	{
-		// Create layer1 using make_layer
-		auto layer1 = torch::nn::Sequential(
-			torch::nn::Conv2d(torch::nn::Conv2dOptions(in_channels, 64, 7).stride(2).padding(3).bias(false)),
-			torch::nn::BatchNorm2d(64),
-			torch::nn::ReLU(),
-			torch::nn::MaxPool2d(torch::nn::MaxPool2dOptions(3).stride(2).padding(1))
-		);
-
-		layer1 = make_layer(layer1, layer_sizes[0], block_type, num_blocks[0]);
-		_layer1 = register_module("layer1", layer1);
-
-		// // Layer2
-		auto layer2 = torch::nn::Sequential();
-		layer2 = make_layer(layer2, layer_sizes[1], block_type, num_blocks[1], 2);
-		_layer2 = register_module("layer2", layer2);
-
-		/// Layer3
-		auto layer3 = torch::nn::Sequential();
-		layer3 = make_layer(layer3, layer_sizes[2], block_type, num_blocks[2], 2);
-		_layer3 = register_module("layer3", layer3);
-
-		// Create layer4 using make_layer
-		auto layer4 = torch::nn::Sequential();
-		layer4 = make_layer(layer4, layer_sizes[3], block_type, num_blocks[3], 2);
-		layer4->push_back(FCSoftmaxModule(layer_sizes[3], num_classes));
-		_layer4 = register_module("layer4", layer4);
+		mod->analyzeBCET(warmup, repeat);
+		cout << "\"" << mod->moduleName << "\" BCET: " << mod->bcet << " us" << endl;
 	}
 
-	torch::nn::Sequential make_layer(torch::nn::Sequential& layer, int64_t channels, int block_type, int num_blocks, int64_t stride = 1)
+	for (auto mod : networks)
+		mod->analyzeWCET(1, 1);
+
+	for (auto mod : networks)
 	{
-		auto downsample = torch::nn::Sequential{ nullptr };
-		int64_t in_channels = channels == 64 ? 64 : channels / 2;
+		mod->analyzeWCET(warmup, repeat);
+		cout << "\"" << mod->moduleName << "\" WCET: " << mod->wcet << " us" << endl;
+	}
 
-		if (stride != 1 || in_channels != channels)
-			downsample = torch::nn::Sequential(
-				torch::nn::Conv2d(torch::nn::Conv2dOptions(in_channels, channels, 1).stride(stride).bias(false)),
-				torch::nn::BatchNorm2d(channels)
-			);
+	for (auto mod : networks)
+		mod->assignDeadline();
 
-		layer->push_back(SimpleBlock(in_channels, channels, stride, downsample));
+	for (auto mod : networks)
+		loops.push_back(make_shared<Loop>(Loop(mod)));
 
-		in_channels = channels;
-		stride = 1;  // Only the first block has stride > 1
+	// cudaProfilerStart();
 
-		for (int i = 0; i < (num_blocks - 1); ++i)
+	for (auto loop : loops)
+		loop->start(timer);
+
+	for (auto loop : loops)
+		loop->wait();
+
+	// cudaProfilerStop();
+
+	cout << endl << endl << endl << "-----------------------------" << endl;
+	cout << "High priority modules:" << endl << endl;
+
+	for (auto mod : highNetworks)
+	{
+		int minExec = INT_MAX, maxExec = 0, aveExec = 0;
+		int minResp = INT_MAX, maxResp = 0, aveResp = 0;
+
+		for (auto rec : mod->tracker.records)
 		{
-			if (block_type == 18 || block_type == 34)
-				layer->push_back(SimpleBlock(in_channels, channels, stride));
+			minExec = rec->executionTime < minExec ? rec->executionTime : minExec;
+			maxExec = rec->executionTime > maxExec ? rec->executionTime : maxExec;
+			aveExec += rec->executionTime;
 
-			else
-				layer->push_back(BottleneckBlock(in_channels, channels, stride));
+			minResp = rec->responseTime < minResp ? rec->responseTime : minResp;
+			maxResp = rec->responseTime > maxResp ? rec->responseTime : maxResp;
+			aveResp += rec->responseTime;
 		}
 
-		return layer;
+		aveExec /= mod->tracker.records.size();
+		aveResp /= mod->tracker.records.size();
+		cout << "Module \"" << mod->moduleName << "\":" << endl
+			<< "\tMinimum execution time: " << minExec << " us" << endl
+			<< "\tMaximum execution time: " << maxExec << " us" << endl
+			<< "\tAverage execution time: " << aveExec << " us" << endl
+			<< "\tWorst Recent Execution: " << mod->wret << " us" << endl
+			<< "\tMinimum response time: " << minResp << " us" << endl
+			<< "\tMaximum response time: " << maxResp << " us" << endl
+			<< "\tAverage response time: " << aveResp << " us" << endl << endl;
 	}
 
-	torch::Tensor forward(torch::Tensor& x)
+	cout << endl << endl << endl << "-----------------------------" << endl;
+	cout << "Low priority modules:" << endl << endl;
+
+	for (auto mod : lowNetworks)
 	{
-		x = _layer1->forward(x);//printf("layer 1 done\n\n");
-		x = _layer2->forward(x);//printf("layer 2 done\n\n");
-		x = _layer3->forward(x);//printf("layer 3 done\n\n");
-		return _layer4->forward(x);//printf("layer 4 done\n\n");
+		int minExec = INT_MAX, maxExec = 0, aveExec = 0;
+		int minResp = INT_MAX, maxResp = 0, aveResp = 0;
+		int count = 0;
 
-		// return x;
+		for (auto rec : mod->tracker.records)
+		{
+			if (!rec->accepted)
+				continue;
+
+			count++;
+			minExec = rec->executionTime < minExec ? rec->executionTime : minExec;
+			maxExec = rec->executionTime > maxExec ? rec->executionTime : maxExec;
+			aveExec += rec->executionTime;
+
+			minResp = rec->responseTime < minResp ? rec->responseTime : minResp;
+			maxResp = rec->responseTime > maxResp ? rec->responseTime : maxResp;
+			aveResp += rec->responseTime;
+		}
+
+		if (count == 0)
+			count = 1;
+
+		aveExec /= count;
+		aveResp /= count;
+		cout << "Module \"" << mod->moduleName << "\":" << endl
+			<< "\tMinimum execution time: " << minExec << " us" << endl
+			<< "\tMaximum execution time: " << maxExec << " us" << endl
+			<< "\tAverage execution time: " << aveExec << " us" << endl
+			<< "\tWorst Recent Execution: " << mod->wret << " us" << endl
+			<< "\tMinimum response time: " << minResp << " us" << endl
+			<< "\tMaximum response time: " << maxResp << " us" << endl
+			<< "\tAverage response time: " << aveResp << " us" << endl << endl;
 	}
-};
 
-// Factory function to create ResNet instances
-ResNet create_resnet(int resnet_type)
-{
-	switch (resnet_type)
+	cout << endl << endl << endl << "-----------------------------" << endl;
+
+	double minAcceptance = 10, maxAcceptance = 0, aveAcceptance = 0;
+
+	for (auto mod : lowNetworks)
 	{
-		case 18:
-			return ResNet({ 64, 128, 256, 512 }, 18, { 2, 2, 2, 2 });
-		case 34:
-			return ResNet({ 64, 128, 256, 512 }, 34, { 3, 5, 6, 3 });
-		case 50:
-			return ResNet({ 256, 512, 1024, 2048 }, 50, { 3, 4, 6, 3 });
-		case 101:
-			return ResNet({ 256, 512, 1024, 2048 }, 101, { 3, 5, 23, 3 });
-		case 152:
-			return ResNet({ 256, 512, 1024, 2048 }, 152, { 3, 8, 36, 3 });
-		default:
-			throw std::runtime_error("Unsupported ResNet type");
-	}
-}
+		int skipped = 0, missed = 0;
 
-// Benchmark function
-void benchmark_resnet(int64_t input_size, int64_t batch_size, int64_t num_iterations, int resnet_type)
-{
-	torch::NoGradGuard no_grad;
-	// Check if CUDA is available
-	if (!torch::cuda::is_available())
-	{
-		std::cerr << "CUDA is not available. Exiting." << std::endl;
-		return;
+		for (auto rec : mod->tracker.records)
+		{
+			if (!rec->accepted)
+				skipped++;
+
+			if (rec->missed)
+				missed++;
+		}
+
+		minAcceptance = mod->acceptanceRate < minAcceptance ? mod->acceptanceRate : minAcceptance;
+		maxAcceptance = mod->acceptanceRate > maxAcceptance ? mod->acceptanceRate : maxAcceptance;
+		aveAcceptance += mod->acceptanceRate;
+
+		cout << "Module \"" << mod->moduleName << "\":" << endl
+			<< "\tSkipped: " << skipped << " times" << endl
+			<< "\tMissed: " << missed << " times" << endl
+			<< "\tAccepted Rated: " << mod->acceptanceRate << endl;
 	}
 
-	// Set the device to CUDA
-	torch::Device device(torch::kCUDA);
-
-	// Create a ResNet model
-	ResNet model = create_resnet(resnet_type);
-	model.to(device);  // Move the model to CUDA
-
-	// Dummy input tensor
-	torch::Tensor input = torch::randn({ batch_size, 3, input_size, input_size });
-	input = input.to(device);  // Move the input tensor to CUDA
-
-	// Warm-up
-	for (int i = 0; i < 5; ++i)
-	{
-		torch::NoGradGuard no_grad;
-		model.forward(input);
-	}
-
-	// Benchmark
-	torch::Tensor dummy;
-	auto start = std::chrono::high_resolution_clock::now();
-	for (int i = 0; i < num_iterations; ++i)
-	{
-		torch::NoGradGuard no_grad;
-		dummy = model.forward(input);
-	}
-	auto end = std::chrono::high_resolution_clock::now();
-
-	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-	double fps = static_cast<double>(num_iterations) / duration.count() * 1000;
-
-	std::cout << "ResNet-" << resnet_type << " - Input Size: " << input_size << "x" << input_size
-		<< ", Batch Size: " << batch_size << ", FPS: " << fps << std::endl;
-}
-
-int main()
-{
-	printf("Let's start\n");
-	// ResNet variations to benchmark
-	std::vector<int> resnet_types = { 18, 34 };//, 50, 101, 152 };
-
-	// Common benchmark parameters
-	int64_t input_size = 224;
-	int64_t batch_size = 1;
-	int64_t num_iterations = 100;
-
-	for (int resnet_type : resnet_types)
-	{
-		printf("resnet_type: %d\n", resnet_type);
-		benchmark_resnet(input_size, batch_size, num_iterations, resnet_type);
-	}
-
-	return 0;
+	aveAcceptance /= lowNetworks.size();
+	cout << "Minimum acceptance rate: " << minAcceptance << endl
+		<< "Maximum acceptance rate: " << maxAcceptance << endl
+		<< "Average acceptance rate: " << aveAcceptance << endl;
 }

@@ -1,5 +1,4 @@
-# ifndef __OPERATION__
-# define __OPERATION__
+# pragma once
 
 # include <cnt.hpp>
 # include <ctxd.hpp>
@@ -23,7 +22,7 @@ namespace FGPRS
 {
 	class MyContainer;
 
-	class Operation
+	class Operation : public enable_shared_from_this<Operation>
 	{
 	private:
 		Tensor* _input;
@@ -32,26 +31,32 @@ namespace FGPRS
 		int id;
 		string name, fullName;
 		shared_ptr<MyContainer> container;
-		shared_ptr<Sequential> sequential;
-		int relativeDeadline[3], stackedDeadline[3];
+		shared_ptr<SequentialImpl> sequential;
+		int relativeDeadline, stackedDeadline;
 		steady_clock::time_point absoluteDeadline;
 		steady_clock::time_point startTime, finishTime;
-		bool highPriority = false, isLatest = false;
-		int bcet, wcet;
+		bool highPriority = false, isLast = false;
+		int bcet, wcet, wret;
+		bool priorDelayed = false, finished = false, delayed;
+		bool released = false;
 
 		Operation() {}
+		Operation(string name, shared_ptr<MyContainer> container, shared_ptr<SequentialImpl> module, bool isLast);
 
-		Operation(int id, string name, shared_ptr<MyContainer> container, shared_ptr<Sequential> module, bool highPriority, bool isLatest)
-			: id(id), name(name), container(container), fullName(container->name + "->" + name),
-			sequential(module), highPriority(highPriority), isLatest(isLatest)
+		static bool EDF(const Operation& op1, const Operation& op2)
 		{
+			return op1.absoluteDeadline < op2.absoluteDeadline;
 		}
 
-		Tensor analyze(int warmup, int repeat, Tensor input, int index);
+		static bool EDF(const shared_ptr<Operation>& op1, const shared_ptr<Operation>& op2)
+		{
+			return op1->absoluteDeadline < op2->absoluteDeadline;
+		}
+
+		Tensor analyzeBCET(int warmup, int repeat, Tensor input);
+		Tensor analyzeWCET(int warmup, int repeat, Tensor input);
 		Tensor releaseSync(Tensor input);
-		Tensor releaseAsync(Tensor input);
+		future<Tensor> releaseAsync(Tensor input);
 		void setAbsoluteDeadline(steady_clock::time_point start);
 	};
 }
-
-# endif

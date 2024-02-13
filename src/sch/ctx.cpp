@@ -2,9 +2,9 @@
 
 # include <ctxd.hpp>
 # include <schd.hpp>
-# include <loop.hpp>
 
 # include <iostream>
+# include <random>
 
 # include <cuda.h>
 # include <cudaTypedefs.h>
@@ -18,24 +18,22 @@ using namespace FGPRS;
 using namespace std;
 using namespace torch;
 
-int MyContext::maxParallel;
+int MyContext::streamCount;
 
-MyContext::MyContext(unsigned smCount, int index, bool isDefault) :
-	smCount(smCount), index(index), _default(isDefault),
-	_pMutex(new mutex), _pQueueMutex(new mutex), //_lock(*_pMutex),
+MyContext::MyContext(int index, int smCount, bool isDefault) :
+	index(index), smCount(smCount), _default(isDefault),
+	_pMutex(new mutex), _pQueueMutex(new mutex),
 	cv(new condition_variable())
 {
-	// if (smCount <= 20)
-	// 	maxParallel = 3;
-
-	// else if (smCount < 40)
-	// 	maxParallel = 3;
-
-	// else if (smCount < 60)
-	// 	maxParallel = 3;
-
-	// else
-	// maxParallel = 3;
+	highLastDelayed = vector<shared_ptr<Operation>>(0);
+	highLast = vector<shared_ptr<Operation>>(0);
+	highDelayed = vector<shared_ptr<Operation>>(0);
+	highOther = vector<shared_ptr<Operation>>(0);
+	lowLastDelayed = vector<shared_ptr<Operation>>(0);
+	lowLast = vector<shared_ptr<Operation>>(0);
+	lowDelayed = vector<shared_ptr<Operation>>(0);
+	lowOther = vector<shared_ptr<Operation>>(0);
+	running = vector<shared_ptr<Operation>>(0);
 }
 
 bool MyContext::initialize()
@@ -46,7 +44,6 @@ bool MyContext::initialize()
 	{
 		result &= cuInit(0) == CUDA_SUCCESS;
 		result &= cuCtxGetCurrent(&_context) == CUDA_SUCCESS;
-		// return result;
 	}
 
 	else
@@ -55,29 +52,27 @@ bool MyContext::initialize()
 		affinity.type = CU_EXEC_AFFINITY_TYPE_SM_COUNT;
 		affinity.param.smCount.val = smCount;
 		result &= cuCtxCreate_v3(&_context, &affinity, 1, 0, 0) == CUDA_SUCCESS;
-
-		cuInit(0);
+		result &= cuCtxSetCurrent(_context) == CUDA_SUCCESS;
+		result &= cuInit(0) == CUDA_SUCCESS;
 	}
 
 	size_t temp;
 
-	result &= cuCtxGetLimit(&temp, CU_LIMIT_PRINTF_FIFO_SIZE) == CUDA_SUCCESS;
-	result &= cuCtxSetLimit(CU_LIMIT_PRINTF_FIFO_SIZE, temp + (index << 8)) == CUDA_SUCCESS;
+	result &= cuCtxGetLimit(&temp, CU_LIMIT_PRINTF_FIFO_SIZE) == CUDA_SUCCESS || _default;
+	result &= cuCtxSetLimit(CU_LIMIT_PRINTF_FIFO_SIZE, temp + (index << 8)) == CUDA_SUCCESS || _default;
 
-	result &= cuCtxGetLimit(&temp, CU_LIMIT_MALLOC_HEAP_SIZE) == CUDA_SUCCESS;
+	result &= cuCtxGetLimit(&temp, CU_LIMIT_MALLOC_HEAP_SIZE) == CUDA_SUCCESS || _default;
 	result &= cuCtxSetLimit(CU_LIMIT_MALLOC_HEAP_SIZE,
-		temp + ((Scheduler::contextCount + 1) << 16)) == CUDA_SUCCESS;
+		temp + ((Scheduler::contextCount + 1) << 16)) == CUDA_SUCCESS || _default;
+
+	for (int i = 0; i < streamCount; i++)
+		_streams.push_back(MyStream(this));
 
 	return result;
 }
 
-// c10::cuda::CUDAStream* MyContext::select()
 bool MyContext::select()
 {
-	// if (_default)
-	// 	return MyContext::selectDefault();
-
-	isBusy = true;
 	c10::cuda::CUDAStream::setContextIndex(index);
 	return cuCtxSetCurrent(_context) == CUDA_SUCCESS;
 }
@@ -87,158 +82,311 @@ bool MyContext::selectDefault()
 	return Scheduler::selectDefaultContext()->select();
 }
 
-bool MyContext::release()
+void MyContext::queueOperation(shared_ptr<Operation> operation)
 {
-	isBusy = false;
-	// return selectDefault();
-}
-
-// void MyContext::lock()
-// {
-// 	cout << "Locking " << smCount << "\tcount: " << lockCount << endl;
-// 	while (lockCount >= 2)
-// 	{
-// 		cv->wait(_lock);
-// 		cout << "Notified " << smCount << "\tcount: " << lockCount << endl;
-// 	}
-// 	cout << "Locked " << smCount << endl;
-// 	lockCount++;
-// }
-
-// void MyContext::unlock()
-// {
-// 	lockCount--;
-// 	cv->notify_all();
-// 	cout << "Unlocked " << smCount << endl;
-// }
-
-void MyContext::lock()
-{
-	unique_lock<mutex> lock(*_pMutex);
-
-	while (lockCount >= maxParallel)
-		cv->wait(lock);
-
-	lockCount++;
-}
-
-void MyContext::lock(Operation* operation)
-{
-	lock();
-	return;
-	bool preCondition = !operation->isLatest && !operation->highPriority;
-	unique_lock<mutex> lock(*_pMutex);
-
-	if (preCondition)
-		while (lockCount >= maxParallel && (!operation->isReady))
-			cv->wait(lock);
-
-	lockCount++;
-	operation->running = true;
-}
-
-void MyContext::unlock()
-{
-	unique_lock<mutex> lock(*_pMutex);
-
-	lockCount--;
-	cv->notify_all();
-}
-
-void MyContext::unlock(Operation* operation)
-{
-	unlock();
-	return;
-	unique_lock<mutex> lock(*_pMutex);
-	operation->running = false;
-	operation->isReady = false;
-
-	microseconds minSlack = microseconds::max(), tempSlack;
-	auto now = steady_clock::now();
-	Operation* minSlackOp = nullptr;
-
-	for (auto op : queue)
+	if (operation->highPriority)
 	{
-		if (op->running)
-			continue;
-
-		tempSlack = duration_cast<microseconds>(op->absoluteDeadline - now) - microseconds((int)op->contextData[index - 1].occupiedExecutionTime);
-
-		if (tempSlack < minSlack)
+		if (operation->isLast && operation->priorDelayed)
 		{
-			minSlack = tempSlack;
-			minSlackOp = op;
+			highLastDelayed.push_back(operation);
+			sort(highLastDelayed.begin(), highLastDelayed.end(),
+				[](const std::shared_ptr<FGPRS::Operation>& op1, const std::shared_ptr<FGPRS::Operation>& op2)
+				{
+					return Operation::EDF(op1, op2);
+				});
+		}
+
+		else if (operation->isLast)
+		{
+			highLast.push_back(operation);
+			sort(highLast.begin(), highLast.end(),
+				[](const std::shared_ptr<FGPRS::Operation>& op1, const std::shared_ptr<FGPRS::Operation>& op2)
+				{
+					return Operation::EDF(op1, op2);
+				});
+		}
+
+		else if (operation->priorDelayed)
+		{
+			highDelayed.push_back(operation);
+			sort(highDelayed.begin(), highDelayed.end(),
+				[](const std::shared_ptr<FGPRS::Operation>& op1, const std::shared_ptr<FGPRS::Operation>& op2)
+				{
+					return Operation::EDF(op1, op2);
+				});
+		}
+
+		else
+		{
+			highOther.push_back(operation);
+			sort(highOther.begin(), highOther.end(),
+				[](const std::shared_ptr<FGPRS::Operation>& op1, const std::shared_ptr<FGPRS::Operation>& op2)
+				{
+					return Operation::EDF(op1, op2);
+				});
 		}
 	}
 
-	// time_point earliestDeadline = now + microseconds(1000);
-
-	// for (auto op : queue)
-	// {
-	// 	if (op->running)
-	// 		continue;
-
-	// 	if (op->absoluteDeadline < earliestDeadline)
-	// 	{
-	// 		earliestDeadline = op->absoluteDeadline;
-	// 		minSlackOp = op;
-	// 	}
-	// }
-
-	// if (minSlackOp != nullptr)
-	// 	minSlackOp->isReady = true;
-
-	lockCount--;
-	cv->notify_all();
-}
-
-void MyContext::queueOperation(Operation* operation)
-{
-	_pQueueMutex->lock();
-	_changed = true;
-	queue.push_back(operation);
-	_pQueueMutex->unlock();
-}
-
-void MyContext::dequeueOperation(Operation* operation)
-{
-	_pQueueMutex->lock();
-	_changed = true;
-	queue.erase(std::remove(queue.begin(), queue.end(), operation), queue.end());
-	_pQueueMutex->unlock();
-}
-
-steady_clock::time_point MyContext::getFinishTime()
-{
-	if (queue.size() == 0)
-		return _finishTime = steady_clock::now();
-
-	// if (!_changed)
-	// 	return _finishTime;
-
-	_changed = false;
-	double sum = 0;
-
-	for (auto op : queue)
-		sum += op->contextData[index - 1].occupiedExecutionTime;
-
-	time_point<steady_clock> dummystart;
-
-	if ((queue[0]->startTime + microseconds((int)queue[0]->contextData[index - 1].occupiedExecutionTime)) < steady_clock::now())
-		dummystart = steady_clock::now();
 	else
-		dummystart = queue[0]->startTime;
+	{
+		if (operation->isLast && operation->priorDelayed)
+		{
+			lowLastDelayed.push_back(operation);
+			sort(lowLastDelayed.begin(), lowLastDelayed.end(),
+				[](const std::shared_ptr<FGPRS::Operation>& op1, const std::shared_ptr<FGPRS::Operation>& op2)
+				{
+					return Operation::EDF(op1, op2);
+				});
+		}
 
-	_finishTime = dummystart + microseconds((int)sum);
-	return _finishTime;
+		else if (operation->isLast)
+		{
+			lowLast.push_back(operation);
+			sort(lowLast.begin(), lowLast.end(),
+				[](const std::shared_ptr<FGPRS::Operation>& op1, const std::shared_ptr<FGPRS::Operation>& op2)
+				{
+					return Operation::EDF(op1, op2);
+				});
+		}
+
+		else if (operation->priorDelayed)
+		{
+			lowDelayed.push_back(operation);
+			sort(lowDelayed.begin(), lowDelayed.end(),
+				[](const std::shared_ptr<FGPRS::Operation>& op1, const std::shared_ptr<FGPRS::Operation>& op2)
+				{
+					return Operation::EDF(op1, op2);
+				});
+		}
+
+		else
+		{
+			lowOther.push_back(operation);
+			sort(lowOther.begin(), lowOther.end(),
+				[](const std::shared_ptr<FGPRS::Operation>& op1, const std::shared_ptr<FGPRS::Operation>& op2)
+				{
+					return Operation::EDF(op1, op2);
+				});
+		}
+	}
 }
 
-bool MyContext::isEmpty()
+void MyContext::dequeueOperation(shared_ptr<Operation> operation)
 {
-	return queue.size() == 0;
+	if (operation->highPriority)
+	{
+		if (operation->isLast && operation->priorDelayed)
+			highLastDelayed.erase(remove(highLastDelayed.begin(), highLastDelayed.end(), operation), highLastDelayed.end());
+
+		else if (operation->isLast)
+			highLast.erase(remove(highLast.begin(), highLast.end(), operation), highLast.end());
+
+		else if (operation->priorDelayed)
+			highDelayed.erase(remove(highDelayed.begin(), highDelayed.end(), operation), highDelayed.end());
+
+		else
+			highOther.erase(remove(highOther.begin(), highOther.end(), operation), highOther.end());
+	}
+
+	else
+	{
+		if (operation->isLast && operation->priorDelayed)
+			lowLastDelayed.erase(remove(lowLastDelayed.begin(), lowLastDelayed.end(), operation), lowLastDelayed.end());
+
+		else if (operation->isLast)
+			lowLast.erase(remove(lowLast.begin(), lowLast.end(), operation), lowLast.end());
+
+		else if (operation->priorDelayed)
+			lowDelayed.erase(remove(lowDelayed.begin(), lowDelayed.end(), operation), lowDelayed.end());
+
+		else
+			lowOther.erase(remove(lowOther.begin(), lowOther.end(), operation), lowOther.end());
+	}
 }
 
-bool MyContext::hasCapacity()
+void MyContext::releaseOperation(shared_ptr<Operation> operation)
 {
-	return queue.size() < maxParallel;
+	_pQueueMutex->lock();
+	operation->released = false;
+
+	// selectHeadOperation();
+
+	if (_runningCount < streamCount && _headOperation == nullptr)
+	{
+		_runningCount++;
+		running.push_back(operation);
+		_pQueueMutex->unlock();
+		// if (_runningCount < streamCount)
+		// 	cout << "#\n";
+		// else
+		// 	cout << "@\n";
+		return;
+	}
+
+	if (_runningCount < (streamCount - 1))
+		cout << "# " << operation->fullName << endl;
+
+	queueOperation(operation);
+	selectHeadOperation();
+	_pQueueMutex->unlock();
+	unique_lock<mutex> lock(*_pMutex);
+
+	while (_runningCount >= streamCount || operation != _headOperation)
+		cv->wait(lock);
+
+	_pQueueMutex->lock();
+	_runningCount++;
+	operation->released = true;
+
+	running.push_back(operation);
+	dequeueOperation(operation);
+	_pQueueMutex->unlock();
+}
+
+void MyContext::selectHeadOperation()
+{
+	shared_ptr<Operation> potentialHead = nullptr;
+
+	if (highLastDelayed.size() > 0)
+		potentialHead = highLastDelayed[0];
+
+	else if (highLast.size() > 0)
+		potentialHead = highLast[0];
+
+	else	if (highDelayed.size() > 0)
+		potentialHead = highDelayed[0];
+
+	else if (highOther.size() > 0)
+		potentialHead = highOther[0];
+
+	else if (lowLastDelayed.size() > 0)
+		potentialHead = lowLastDelayed[0];
+
+	else if (lowDelayed.size() > 0)
+		potentialHead = lowDelayed[0];
+
+	else if (lowLast.size() > 0)
+		potentialHead = lowLast[0];
+
+	else if (lowOther.size() > 0)
+		potentialHead = lowOther[0];
+
+	_headOperation = potentialHead;
+}
+
+void MyContext::finishOperation(shared_ptr<Operation> operation)
+{
+	_pQueueMutex->lock();
+
+	_runningCount--;
+	running.erase(remove(running.begin(), running.end(), operation), running.end());
+
+	selectHeadOperation();
+
+	cv->notify_all();
+	_pQueueMutex->unlock();
+}
+
+void MyContext::updateUtilization()
+{
+	double hUtil = 0, aUtil = 0, oUtil = 0;
+
+	for (auto mod : highContainers)
+		hUtil += mod->utilizationPartitioned;
+
+	oUtil = hUtil;
+	aUtil = hUtil;
+
+	for (auto mod : lowContainers)
+	{
+		oUtil += mod->utilizationPartitioned;
+		aUtil += mod->active ? mod->utilizationPartitioned : 0;
+	}
+
+	highUtilization = hUtil;
+	activeUtilization = aUtil;
+	overallUtilization = oUtil;
+
+	// cout << "Context " << index << " utilization:" << endl
+	// 	<< "\tHigh: " << highUtilization << endl
+	// 	<< "\tActive: " << activeUtilization << endl
+	// 	<< "\tOverall: " << overallUtilization << endl;
+}
+
+void MyContext::assignModule(shared_ptr<MyContainer> container)
+{
+	if (container->highPriority)
+		highContainers.push_back(container);
+	else
+		lowContainers.push_back(container);
+
+	allContainers.push_back(container);
+	container->currentContext = this;
+}
+
+void MyContext::removeModule(shared_ptr<MyContainer> container)
+{
+	if (container->highPriority)
+		highContainers.erase(remove(highContainers.begin(), highContainers.end(), container), highContainers.end());
+	else
+		lowContainers.erase(remove(lowContainers.begin(), lowContainers.end(), container), lowContainers.end());
+
+	allContainers.erase(remove(allContainers.begin(), allContainers.end(), container), allContainers.end());
+}
+
+void MyContext::warmup()
+{
+	int strIndex = 0;
+	select();
+
+	for (auto container : allContainers)
+	{
+		for (auto str : _streams)
+		{
+			str.select();
+			container->forwardRandom();
+			str.release();
+		}
+	}
+}
+
+void MyContext::runDummies(shared_ptr<MyContainer> module)
+{
+	int maxCount = streamCount - (module->currentContext == this);
+
+	dummyContainers.clear();
+	shuffle(allContainers.begin(), allContainers.end(), default_random_engine());
+
+	for (auto container : allContainers)
+	{
+		if (container == module)
+			continue;
+
+		if (dummyContainers.size() == maxCount)
+			break;
+
+		dummyContainers.push_back(container);
+		container->runDummy();
+	}
+}
+
+void MyContext::stopDummies()
+{
+	for (auto container : dummyContainers)
+		container->stopDummy();
+}
+
+void MyContext::waitDummies()
+{
+	for (auto container : dummyContainers)
+		container->waitDummy();
+}
+
+MyStream* MyContext::getStream()
+{
+	for (auto& stream : _streams)
+		if (!stream.busy)
+			return &stream;
+
+	return nullptr;
 }

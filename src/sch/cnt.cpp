@@ -4,6 +4,7 @@
 
 # include <schd.hpp>
 # include <ctxd.hpp>
+# include "trc.hpp"
 
 # include <torch/torch.h>
 
@@ -12,6 +13,7 @@
 # include <thread>
 # include <unistd.h>
 # include <filesystem>
+# include <memory>
 
 # include <nvToolsExt.h>
 
@@ -23,179 +25,312 @@ using namespace FGPRS;
 using namespace std;
 using namespace chrono;
 
+MyContainer::MyContainer(const MyContainer& container) : Module(container), tracker(ModuleTracker(this)) {}
 
-void MyContainer::initLoggers(string name)
+void MyContainer::setFrequency(int frequency)
 {
-	_name = name;
-
-	mkdir(("logs/" + name).c_str(), 0777);
-
-	// remove(("logs/" + name + "/analyze.log").c_str());
-	// remove(("logs/" + name + "/deadline.log").c_str());
-	// remove(("logs/" + name + "/schedule.log").c_str());
-
-	analyzeLogger = spdlog::basic_logger_mt(name + "_analyze", "logs/" + name + "/analyze.log");
-	deadlineLogger = spdlog::basic_logger_mt(name + "_deadline", "logs/" + name + "/deadline.log");
-	scheduleLogger = spdlog::basic_logger_mt(name + "_schedule", "logs/" + name + "/schedule.log");
-
-	analyzeLogger->set_pattern("[%S.%f] %v");
-	analyzeLogger->flush_on(spdlog::level::info);
-	deadlineLogger->set_pattern("[%S.%f] %v");
-	scheduleLogger->set_pattern("[%S.%f] %v");
+	this->frequency = frequency;
+	interval = 1000000 / frequency;
 }
 
-void MyContainer::clearAnalyzeLogger(string name)
+void MyContainer::assignExecutionTime()
 {
-	remove(("logs/" + name + "/analyze.log").c_str());
-	spdlog::drop(name + "_analyze");
-	analyzeLogger = spdlog::basic_logger_mt(name + "_analyze", "logs/" + name + "/analyze.log");
-	analyzeLogger->set_pattern("[%S.%f] %v");
+	wret = 0;
+
+	for (auto op : operations)
+		wret += op->wret;
 }
 
-void MyContainer::clearScheduleLogger(string name)
+void MyContainer::updateExecutionTime()
 {
-	remove(("logs/" + name + "/schedule.log").c_str());
-	spdlog::drop(name + "_schedule");
-	scheduleLogger = spdlog::basic_logger_mt(name + "_schedule", "logs/" + name + "/schedule.log");
-	scheduleLogger->set_pattern("[%S.%f] %v");
-}
+	if (_iterationCount < ModuleTracker::windowSize)
+		return;
 
-vector<shared_ptr<Operation>> MyContainer::getOperations(int level)
-{
-	return operations[level - 1];
-}
-
-void MyContainer::copyOperations(string parentName, MyContainer& container, int level)
-{
-	for (auto op : container.getOperations(1))
+	for (auto op : operations)
 	{
-		op->setParentName(parentName);
-		operations[0].push_back(op);
-	}
+		auto record = tracker.records.rbegin();
+		int count = ModuleTracker::windowSize;
+		op->wret = 0;
 
-	if (level != 2)
-	{
-		for (auto op : container.getOperations(2))
+		while (count--)
 		{
-			op->setParentName(parentName);
-			operations[1].push_back(op);
+			if ((*record)->accepted && (*record)->operations[op->id]->executionTime > op->wret)
+				op->wret = (*record)->operations[op->id]->executionTime;
+
+			record++;
 		}
+
+		currentRecord->setOperationWret(op.get(), op->wret);
 	}
 
-	if (level == 1)
+	assignExecutionTime();
+}
+
+void MyContainer::updateUtilization()
+{
+	updateExecutionTime();
+
+	utilizationIsolated = (double)bcet / interval;
+	utilizationPartitioned = (double)wret / interval;// / (Scheduler::contextCount * MyContext::streamCount);
+}
+
+void MyContainer::addOperation(shared_ptr<Operation> operation)
+{
+	operations.push_back(operation);
+	operation->id = operations.size() - 1;
+	operationCount++;
+}
+
+void MyContainer::reset()
+{
+	for (auto op : operations)
 	{
-		for (auto op : container.getOperations(3))
-		{
-			op->setParentName(parentName);
-			operations[2].push_back(op);
-		}
+		op->released = false;
+		op->finished = false;
+		op->delayed = false;
+		op->priorDelayed = false;
 	}
 }
 
-void MyContainer::copyOperations(string parentName, MyContainer* container, int level)
+void MyContainer::runDummy()
 {
-	auto dummy = container->getOperations(1);
+	_stopDummy = false;
 
-	for (auto op : container->getOperations(1))
-	{
-		op->setParentName(parentName);
-		operations[0].push_back(op);
-	}
-
-	if (level != 2)
-	{
-		for (auto op : container->getOperations(2))
+	_dummyThread = thread([this]()
 		{
-			op->setParentName(parentName);
-			operations[1].push_back(op);
-		}
-	}
+			currentContext->select();
+			auto str = currentContext->getStream();
+			str->select();
 
-	if (level == 1)
+			auto input = torch::randn({ 1, 3, 224, 224 }).cuda();
+			int repCount = 0;
+			auto start = steady_clock::now();
+
+			while (!_stopDummy)
+			{
+				auto output = forwardDummy(input, str);
+				str->synchronize();
+				repCount++;
+			}
+
+			auto end = steady_clock::now();
+			auto duration = duration_cast<microseconds>(end - start).count();
+			auto repDuration = duration / repCount;
+			str->release();
+		});
+}
+
+void MyContainer::stopDummy()
+{
+	_stopDummy = true;
+}
+
+void MyContainer::waitDummy()
+{
+	_dummyThread.join();
+}
+
+void MyContainer::analyzeBCET(int warmup, int repeat)
+{
+	bcet = 0;
+	Scheduler::selectDefaultContext()->select();
+	auto input = torch::randn({ 1, 3, inputSize, inputSize }).cuda();
+
+	for (auto op : operations)
 	{
-		for (auto op : container->getOperations(3))
-		{
-			op->setParentName(parentName);
-			operations[2].push_back(op);
-		}
+		input = op->analyzeBCET(warmup, repeat, input);
+		bcet += op->bcet;
 	}
 }
 
-Tensor MyContainer::schedule(Tensor input, int level)
+void MyContainer::analyzeWCET(int warmup, int repeat)
 {
-	for (auto op : operations[level - 1])
-		input = op->scheduleSync(input);
+	wcet = 0;
+	currentContext->select();
+	auto input = torch::randn({ 1, 3, inputSize, inputSize }).cuda();
+	Scheduler::runDummies(operations[0]->container);
+	this_thread::sleep_for(chrono::milliseconds(10));
+
+	for (auto op : operations)
+	{
+		input = op->analyzeWCET(warmup, repeat, input);
+		wcet += op->wcet;
+	}
+
+	Scheduler::stopDummies();
+	Scheduler::waitDummies();
+	wret = wcet;
+
+	updateUtilization();
+}
+
+void MyContainer::assignDeadline()
+{
+	int deadlineStack = 0;
+
+	for (auto op : operations)
+	{
+		op->relativeDeadline = (int)round((double)op->wret / wret * interval);
+		deadlineStack += op->relativeDeadline;
+		op->stackedDeadline = deadlineStack;
+	}
+}
+
+void MyContainer::setAbsoluteDeadline(steady_clock::time_point start)
+{
+	_lastArrival = start;
+
+	for (auto op : operations)
+		op->absoluteDeadline = start + microseconds((int)op->stackedDeadline);
+}
+
+Tensor MyContainer::forwardDummy(Tensor input, MyStream* str)
+{
+	for (auto op : operations)
+	{
+		input = op->sequential->forward(input);
+		str->synchronize();
+	}
 
 	return input;
 }
 
-void MyContainer::analyze(int warmup, int repeat, Tensor input, int index)
+bool MyContainer::doesMeetDeadline()
 {
-	for (int i = 1; i <= 3; i++)
-		analyze(warmup, repeat, input, index, i);
+	return (currentContext->activeUtilization + utilizationPartitioned) < 1.0;
 }
 
-Tensor MyContainer::analyze(int warmup, int repeat, Tensor input, int index, int level)
+bool MyContainer::isFair()
 {
-	for (auto op : operations[level - 1])
-	{
-#ifdef ENABLE_NVTX_PROFILING
-		// auto id = nvtxRangeStartA(op->getFullName().c_str());
-#endif
-
-		input = op->analyze(warmup, repeat, input, index);
-
-#ifdef ENABLE_NVTX_PROFILING
-		// nvtxRangeEnd(id);
-#endif
-	}
-
-	return input;
+	return (acceptanceRate < Scheduler::acceptanceRate * 1.25);
 }
 
-double MyContainer::assignExecutionTime(int level, int contextIndex, double executionTimeStack)
+int MyContainer::admissionTest()
 {
-	double timeStack = 0;
-	level -= 1;
+	if (!isFair())
+		return -1;
 
-	contextData[level].resize(Scheduler::contextCount);
+	if (doesMeetDeadline())
+		return 1;
+	// return -3;
+	double minUtilization = currentContext->activeUtilization;
+	MyContext* context = nullptr;
 
 	for (int i = 0; i < Scheduler::contextCount; i++)
 	{
-		contextData[level][i] = ContextData(Scheduler::selectContextByIndex(i));
-
-		for (auto op : operations[level])
-			contextData[level][i].stackExecutionTime(op->contextData[i]);
+		if (Scheduler::contextPool[i].activeUtilization < minUtilization)
+		{
+			minUtilization = Scheduler::contextPool[i].activeUtilization;
+			context = &Scheduler::contextPool[i];
+		}
 	}
 
-	for (auto op : operations[level])
-		timeStack += op->getRegulatedExecutionTime(contextIndex);
+	if (context == nullptr)
+		return -2;
 
-	regulatedExecutionTime[level] = timeStack;
-	return executionTimeStack + timeStack;
-}
-
-double MyContainer::assignDeadline(double quota, int level, int contextIndex, double deadlineStack)
-{
-	level -= 1;
-
-	for (auto op : operations[level])
+	if ((minUtilization + utilizationPartitioned) < 1.0)
 	{
-		op->relativeDeadline[level] = op->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
-		deadlineStack += op->relativeDeadline[level];
-		op->stackedDeadline[level] = deadlineStack;
-		deadlineLogger->info("{}: {:.0f}", op->getFullName().c_str(), op->relativeDeadline[level]);
-		// cout << fixed << setprecision(0) << op->getFullName() << "(" << level << ", " << contextIndex << "):\n\t"
-		// 	<< op->getRegulatedExecutionTime(contextIndex) << "-->" << regulatedExecutionTime[level] << endl;
-		// cout << "\t"
-		// 	<< op->relativeDeadline[level] << "-->" << op->stackedDeadline[level] << endl;
+		cout << "Container " << moduleName << " moved from " << currentContext->index << " to " << context->index << endl
+			<< "\tMod Utilization: " << utilizationPartitioned << endl
+			<< "\tOld Utilization: " << currentContext->activeUtilization << endl
+			<< "\tNew Utilization: " << context->activeUtilization << endl;
+
+		currentContext->removeModule(operations[0]->container);
+		currentContext = context;
+		currentContext->assignModule(operations[0]->container);
+
+		return 2;
 	}
 
-	return deadlineStack;
+	return -2;
 }
 
-void MyContainer::setAbsoluteDeadline(int level, steady_clock::time_point start, int bias)
+void MyContainer::updateAcceptanceRate(bool accepted)
 {
-	for (auto op : operations[level - 1])
-		op->setAbsoluteDeadline(level, start, bias);
+	acceptedCount += accepted;
+	missedCount += !accepted;
+	acceptanceRate = (double)acceptedCount / (acceptedCount + missedCount);
+
+	currentContext->acceptedCount += accepted;
+	currentContext->missedCount += !accepted;
+	currentContext->acceptanceRate =
+		(double)currentContext->acceptedCount /
+		(currentContext->acceptedCount + currentContext->missedCount);
+
+	Scheduler::acceptedCount += accepted;
+	Scheduler::missedCount += !accepted;
+	Scheduler::acceptanceRate = (double)Scheduler::acceptedCount / (Scheduler::acceptedCount + Scheduler::missedCount);
+}
+
+bool MyContainer::release(Tensor input)
+{
+	auto accepted = true;
+	reset();
+	auto opPrev = operations.back();
+	_iterationCount++;
+	int testResult = admissionTest();
+	testResult = doesMeetDeadline();
+	accepted = highPriority || (testResult > 0);
+
+	if (!highPriority)
+		updateAcceptanceRate(accepted);
+
+	if (!accepted)
+	{
+		cout << "Container " << moduleName << " skipped" << endl
+			<< "\tTest Result: " << testResult << endl
+			<< "\tContainer Acceptance Rate: " << acceptanceRate << endl
+			<< "\tContext Acceptance Rate: " << currentContext->acceptanceRate << endl
+			<< "\tScheduler Acceptance Rate: " << Scheduler::acceptanceRate << endl
+			<< "\tModule Utilization: " << utilizationPartitioned << endl
+			<< "\tContext Utilization: " << currentContext->activeUtilization << endl;
+		auto record = make_shared<ModuleTrackingRecord>(this, false);
+		tracker.addRecord(record);
+		return false;
+	}
+
+	if (!highPriority)
+	{
+		cout << "Container " << moduleName << " passed" << endl
+			<< "\tContainer Acceptance Rate: " << acceptanceRate << endl
+			<< "\tContext Acceptance Rate: " << currentContext->acceptanceRate << endl
+			<< "\tScheduler Acceptance Rate: " << Scheduler::acceptanceRate << endl;
+	}
+
+	active = true;
+	currentContext->updateUtilization();
+	currentContext->select();
+
+	auto record = make_shared<ModuleTrackingRecord>(this, true);
+	currentRecord = record;
+
+	auto start = steady_clock::now();
+
+	for (int i = 0; i < operations.size(); i++)
+	{
+		auto op = operations[i];
+		op->priorDelayed = opPrev->delayed;
+		input = op->releaseSync(input);
+		opPrev = op;
+	}
+
+	auto end = steady_clock::now();
+	auto duration = duration_cast<microseconds>(end - start).count();
+	record->setResponseTime(duration);
+	tracker.addRecord(record);
+	auto temp = wret;
+	updateUtilization();
+	assignDeadline();
+	active = false;
+	currentContext->updateUtilization();
+
+	if (testResult == -2)
+	{
+		cout << "Container " << moduleName << " moved" << endl
+			<< "\tOld wret: " << temp << endl
+			<< "\tNew wret: " << wret << endl;
+	}
+
+	// return input;
+	return true;
 }

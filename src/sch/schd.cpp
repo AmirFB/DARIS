@@ -12,6 +12,7 @@
 # include <cuda.h>
 # include <cudaTypedefs.h>
 # include <cuda_runtime.h>
+# include <cuda_runtime_api.h>
 # include <nvToolsExt.h>
 
 # include <torch/torch.h>
@@ -23,111 +24,52 @@ using namespace std;
 using namespace torch;
 using namespace torch::nn;
 
-int Scheduler::maxSmCount;
-bool Scheduler::_stopDummy;
-vector<int> Scheduler::smOptions;
-MyContext* Scheduler::_contextPool;
+MyContext* Scheduler::contextPool;
 MyContext* Scheduler::_defaultContext;
-SchedulerType Scheduler::type;
 
-
-vector<DummyContainer> Scheduler::dummyContainer;
-
-// Sequential* Scheduler::_dummyModule;
-// Tensor* Scheduler::_dummyInput;
-
+int Scheduler::smCount;
 int Scheduler::contextCount = 0;
-bool Scheduler::noDefault;
-MyContext dummyContext;
-int dummyIndex = 0;
+int Scheduler::maxSmCount;
+int Scheduler::thresholdWindow;
 
-bool Scheduler::initialize(int options[], int size, SchedulerType type, bool noDefault)
+vector<shared_ptr<MyContainer>> Scheduler::highContainers, Scheduler::lowContainers;
+
+int Scheduler::missedCount = 0, Scheduler::acceptedCount = 0;
+double Scheduler::acceptanceRate = 1;
+
+bool Scheduler::initialize(int contextCount, int smCount)
 {
 	bool result = true;
 	cudaDeviceProp prop;
-	Scheduler::type = type;
 
 	cudaGetDeviceProperties(&prop, 0);
 	maxSmCount = prop.multiProcessorCount;
-	Scheduler::noDefault = noDefault;
-	contextCount = size + (noDefault ? 0 : 1);
 
-	// if (type == PROPOSED_SCHEDULER)
+	Scheduler::contextCount = contextCount;
+	contextPool = new MyContext[contextCount + 1];
+
+	contextPool[contextCount] = MyContext(contextCount, maxSmCount, true);
+	_defaultContext = &contextPool[contextCount];
+	result &= contextPool[contextCount].initialize();
+
+	for (int i = 0; i < contextCount; i++)
 	{
-		// _dummyModule = new Sequential[dummyCount];
-		// _dummyInput = new Tensor[dummyCount];
-
-		// for (int i = 0; i < dummyCount; i++)
-		// {
-		// 	_dummyInput[i] = torch::randn({ 1, 16, 448, 448 }, kCUDA);
-		// 	_dummyModule[i] = Sequential(
-		// 		Conv2d(Conv2dOptions(16, 32, 3).stride(1).padding(3)),
-		// 		BatchNorm2d(32),
-		// 		ReLU(),
-		// 		MaxPool2d(MaxPool2dOptions(2))
-		// 	);
-
-		// 	_dummyModule[i]->eval();
-		// 	_dummyModule[i]->to(kCUDA);
-		// }
-
-		_contextPool = new MyContext[size + 1];
-		smOptions = vector<int>(size + 1);
-
-		smOptions[size] = maxSmCount;
-		_contextPool[size] = MyContext(maxSmCount, 0, true);
-		_defaultContext = &_contextPool[size];
-		result &= _contextPool[size].initialize();
-
-		if (!noDefault)
-			auto dummy = c10::cuda::getStreamFromPool(false, _contextPool[size].index);
-	}
-
-	// else
-	// {
-	// 	smOptions = vector<int>(size);
-	// 	_contextPool = new MyContext[size];
-
-	// 	dummyContext = MyContext(maxSmCount, size, true);
-	// 	_defaultContext = &dummyContext;
-	// }
-
-	for (int i = 0; i < size; i++)
-	{
-		smOptions[i] = (min(max(options[i], 2), maxSmCount));
-
-		_contextPool[i] = MyContext(smOptions[i], i + 1);
-		result &= _contextPool[i].initialize();
-
-		if (type == PROPOSED_SCHEDULER)
-			auto dummy = c10::cuda::getStreamFromPool(false, _contextPool[i].index);
+		contextPool[i] = MyContext(i, smCount, false);
+		result &= contextPool[i].initialize();
 	}
 
 	return result;
 }
 
-MyContext* Scheduler::selectContext(int smCount)
-{
-	for (int i = 0; i < contextCount; i++)
-		if (_contextPool[i].smCount >= smCount && !_contextPool[i].isBusy)
-			return &_contextPool[i];
-
-	return _defaultContext;
-}
-
 MyContext* Scheduler::selectContextByIndex(int index)
 {
-	return &_contextPool[index];
+	return &contextPool[index];
 }
 
 MyContext* Scheduler::selectDefaultContext()
 {
-	return &_contextPool[smOptions.size() - 1];
-}
-
-bool Scheduler::releaseContext(MyContext context)
-{
-	return context.release();
+	// cout << "Context index: " << contextCount << endl;
+	return &contextPool[contextCount];
 }
 
 float Scheduler::getTotalMemoryMB()
@@ -159,211 +101,75 @@ float Scheduler::getMemoryPercentage()
 	return Scheduler::getFreeMemoryMB() / Scheduler::getTotalMemoryMB() * 100;
 }
 
-void Scheduler::dummyFunction(MyContext* ctx, shared_ptr<MyContainer> mod, Tensor* in, c10::cuda::CUDAStream str)
-{
-	NoGradGuard no_grad;
-	int counter = 0;
-	ctx->select();
-	c10::cuda::CUDAStream::setContextIndex(ctx->index);
-	// auto str = c10::cuda::getStreamFromPool(false, ctx->index);
-
-	// while (str.isBusy())
-	// 	str = c10::cuda::getStreamFromPool(FLAGS_torch_jit_enable_new_executor, ctx->index);
-
-	str.select();
-	at::cuda::setCurrentCUDAStream(str);
-
-#ifdef ENABLE_NVTX_PROFILING
-	auto innerId = nvtxRangeStartA(("dummy " + mod->_name + " " + to_string(ctx->index)).c_str());
-#endif
-
-	while (!_stopDummy)
-	{
-		at::cuda::setCurrentCUDAStream(str);
-		auto dummy = mod->forward(*in);
-		counter++;
-		// cuCtxSynchronize();
-		str.synchronize();
-	}
-
-#ifdef ENABLE_NVTX_PROFILING
-	nvtxRangeEnd(innerId);
-#endif
-	str.release();
-	ctx->release();
-}
-
-future<void>* Scheduler::_th;
-
-void Scheduler::startDummy(MyContext* ctx, int moduleIndex)
-{
-	int first = 1;
-	int index = 0;
-	int ctxIndex = contextCount - 1;
-	Tensor dummyOutput;
-	_stopDummy = false;
-	MyContext* dummyContext;
-
-	if (ctx->index == contextCount)
-		ctxIndex--;
-
-	_th = new future<void>[dummyContainer.size() - 1];
-
-	for (auto dummy : dummyContainer)
-	{
-		// cout << "dummy " << dummy.index << endl;
-		if (dummy.index == moduleIndex)
-			continue;
-
-		// cout << "dummy " << dummy.index << " " << ctxIndex << endl;
-		ctxIndex = (ctxIndex + Scheduler::contextCount) % Scheduler::contextCount;
-		// cout << "dummy " << dummy.index << " " << ctxIndex << endl;
-		dummyContext = Scheduler::selectContextByIndex(ctxIndex);
-		dummyContext->select();
-
-		auto str = c10::cuda::getStreamFromPool(false, dummyContext->index);
-
-		while (str.isBusy())
-			str = c10::cuda::getStreamFromPool(FLAGS_torch_jit_enable_new_executor, ctx->index);
-
-		str.select();
-		at::cuda::setCurrentCUDAStream(str);
-		dummyOutput = dummy.mod->forward(*dummy.in);
-		str.synchronize();
-		str.release();
-		dummyContext->release();
-
-		// cout << "Chosen context: " << dummyContext->index << endl;
-		_th[index++] = async(launch::async, dummyFunction, dummyContext, dummy.mod, dummy.in, str);
-		ctxIndex--;
-
-		if (ctxIndex == (ctx->index - 1) && first)
-		{
-			// cout << "dummy " << dummy.index << " first " << first << endl;
-			first--;
-			ctxIndex--;
-		}
-
-		if (index == (dummyContainer.size() - 1))
-			break;
-	}
-
-	// cout << "dummy " << moduleIndex << " started" << endl;
-}
-
-void Scheduler::stopDummy()
-{
-	_stopDummy = true;
-
-	for (int i = 0; i < (dummyContainer.size() - 1); i++)
-		_th[i].get();
-
-	delete[] _th;
-}
-
 mutex globalMutex;
 
-MyContext* Scheduler::getMinimalContext(Operation* operation)
+void Scheduler::populateModules(
+	vector<shared_ptr<MyContainer>> highContainers,
+	vector<shared_ptr<MyContainer>> lowContainers)
 {
-	MyContext* ctx1 = NULL, * ctx2;
-	globalMutex.lock();
+	int index = 0, firstLow;
+	bool first = true;
 
-	steady_clock::time_point earliest1 = steady_clock::now() + seconds(1), earliest2 = steady_clock::now() + seconds(1);
-	steady_clock::time_point temp;
-
-	for (int i = 0; i < contextCount; i++)
+	for (auto high : highContainers)
 	{
-		if (!_contextPool[i].isEmpty())
-			continue;
+		Scheduler::highContainers.push_back(high);
+		contextPool[index].select();
+		contextPool[index].assignModule(high);
+		high->currentContext = &contextPool[index];
 
-		temp = _contextPool[i].getFinishTime() + microseconds((int)operation->contextData[i].occupiedExecutionTime);
+		high->to(kCUDA);
+		high->eval();
+		high->forwardRandom();
 
-		if (temp < operation->absoluteDeadline)
+		index = (index + 1) % contextCount;
+	}
+
+	firstLow = index;
+
+	for (auto low : lowContainers)
+	{
+		Scheduler::lowContainers.push_back(low);
+		contextPool[index].select();
+		contextPool[index].assignModule(low);
+		low->currentContext = &contextPool[index];
+
+		low->to(kCUDA);
+		low->eval();
+		low->forwardRandom();
+
+		index = (index + 1) % contextCount;
+
+		if (first & index == 0)
 		{
-			_contextPool[i].queueOperation(operation);
-			operation->finishTime = _contextPool[i].getFinishTime();
-			globalMutex.unlock();
-			operation->queueCount = _contextPool[i].queue.size();
-			_contextPool[i].lock(operation);
-
-			return &_contextPool[i];
+			first = false;
+			index = firstLow;
 		}
 	}
 
 	for (int i = 0; i < contextCount; i++)
 	{
-		temp = _contextPool[i].getFinishTime() + microseconds((int)operation->contextData[i].occupiedExecutionTime);
+		cout << "Context " << i << " has "
+			<< contextPool[i].highContainers.size() << " high priority modules and "
+			<< contextPool[i].lowContainers.size() << " low priority modules." << endl;
 
-		if (_contextPool[i].isEmpty() && temp < earliest1)
-		{
-			earliest1 = temp;
-			ctx1 = &_contextPool[i];
-		}
-
-		if (temp < earliest2)
-		{
-			earliest2 = temp;
-			ctx2 = &_contextPool[i];
-		}
-	}
-
-	if (ctx1 != NULL)
-	{
-		ctx1->queueOperation(operation);
-		operation->finishTime = ctx1->getFinishTime();
-		globalMutex.unlock();
-		operation->queueCount = ctx1->queue.size();
-		ctx1->lock(operation);
-
-		return ctx1;
-	}
-
-
-	else
-	{
-		ctx2->queueOperation(operation);
-		operation->finishTime = ctx2->getFinishTime();
-		globalMutex.unlock();
-		operation->queueCount = ctx2->queue.size();
-		ctx2->lock(operation);
-
-		return ctx2;
+		contextPool[i].warmup();
 	}
 }
 
-MyContext* Scheduler::getFastestContext(Operation* operation)
+void Scheduler::runDummies(shared_ptr<MyContainer> module)
 {
-	MyContext* ctx;
-	globalMutex.lock();
-
-	steady_clock::time_point earliest = steady_clock::now() + seconds(1);
-	steady_clock::time_point temp;
-
 	for (int i = 0; i < contextCount; i++)
-	{
-		temp = _contextPool[i].getFinishTime() + microseconds((int)operation->contextData[i].occupiedExecutionTime);
-
-		if (temp < earliest)
-		{
-			earliest = temp;
-			ctx = &_contextPool[i];
-		}
-	}
-
-	ctx->queueOperation(operation);
-	operation->finishTime = ctx->getFinishTime();
-	globalMutex.unlock();
-	operation->queueCount = ctx->queue.size();
-	ctx->lock(operation);
-
-	return ctx;
+		contextPool[i].runDummies(module);
 }
 
-bool Scheduler::anyEmptyContext()
+void Scheduler::stopDummies()
 {
 	for (int i = 0; i < contextCount; i++)
-		if (_contextPool[i].isEmpty())
-			return true;
+		contextPool[i].stopDummies();
+}
 
-	return false;
+void Scheduler::waitDummies()
+{
+	for (int i = 0; i < contextCount; i++)
+		contextPool[i].waitDummies();
 }

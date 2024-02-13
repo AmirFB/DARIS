@@ -1,10 +1,29 @@
+# pragma once
+
+# include "cnt.hpp"
 # include "rec.hpp"
 
-#include <vector>
+# include <vector>
 
-class ModuleTracker
+using namespace std;
+
+namespace FGPRS
 {
-public:
-	int window;
-	vector<ModuleTrackingRecord> records;
-};
+	class ModuleTrackingRecord;
+	class MyContainer;
+
+	class ModuleTracker
+	{
+	private:
+		MyContainer* _container;
+
+	public:
+		static int windowSize;
+		vector<shared_ptr<ModuleTrackingRecord>> records;
+
+		ModuleTracker() {}
+		ModuleTracker(MyContainer* container) : _container(container) {}
+
+		void addRecord(shared_ptr<ModuleTrackingRecord> record);
+	};
+}

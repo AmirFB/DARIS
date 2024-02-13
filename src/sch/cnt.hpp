@@ -1,8 +1,9 @@
-# ifndef __CONTAINER__
-# define __CONTAINER__
+# pragma once
 
+# include <str.hpp>
 # include <opr.hpp>
 # include <ctxd.hpp>
+# include <trc.hpp>
 
 # include <torch/torch.h>
 
@@ -11,53 +12,70 @@
 # include <stdio.h>
 # include <memory>
 
-# include <spdlog/spdlog.h>
-# include <spdlog/sinks/basic_file_sink.h>
-
 using namespace torch;
 using namespace torch::nn;
+using namespace at;
 
 using namespace std;
 using namespace chrono;
-using namespace spdlog;
 
 namespace FGPRS
 {
 	class Operation;
+	class MyStream;
 
 	class MyContainer : public Module
 	{
 	private:
 		time_point<steady_clock> _lastArrival;
+		bool _stopDummy = false;
+		thread _dummyThread;
+		int _iterationCount = 0;
 
 	public:
 		bool highPriority = false;
-		vector<vector<shared_ptr<Operation>>> operations;
-		int interval;
+		vector<shared_ptr<Operation>> operations;
+		int interval, frequency;
 		MyContext* currentContext;
+		int operationCount;
+		int inputSize;
+		bool active = false;
+		int missedCount = 0, acceptedCount = 0;
+		double acceptanceRate = 0;
 
-		bool delayed = false;
 		ModuleTracker tracker;
-		string name;
-		int bcet, wcet;
-		shared_ptr<spdlog::logger> analyzeLogger, deadlineLogger, scheduleLogger;
+		shared_ptr<ModuleTrackingRecord> currentRecord;
+		string moduleName;
+		int bcet, wcet, wret;
+		double utilizationIsolated, utilizationPartitioned;
 
-		MyContainer() : Module() {}
-		MyContainer(const MyContainer& container) : Module(container) {}
+		MyContainer() {}
+		MyContainer(const MyContainer& container);
 
-		void initLoggers();
-		void clearAnalyzeLogger();
-		void clearScheduleLogger();
-
+		virtual void initialize(shared_ptr<MyContainer> container, string name, bool highPriority) {}
+		void setFrequency(int frequency);
+		void assignExecutionTime();
+		void updateExecutionTime();
+		void updateUtilization();
+		void addOperation(shared_ptr<Operation> operation);
+		void reset();
 		virtual Tensor forward(Tensor input) { return input; }
-		virtual Tensor release(Tensor input);
+		Tensor forwardRandom() { return forward(torch::rand({ 1, 3, inputSize, inputSize }).cuda()); }
+		virtual Tensor forwardDummy(Tensor input, MyStream* str);
+		bool doesMeetDeadline();
+		bool isFair();
+		int admissionTest();
+		void updateAcceptanceRate(bool accepted);
+		virtual bool release(Tensor input);
 
-		void analyze(int warmup, int repeat, Tensor input);
-		virtual Tensor analyze(int warmup, int repeat, Tensor input);
+		void runDummy();
+		void stopDummy();
+		void waitDummy();
 
-		void assignDeadline();
-		virtual void setAbsoluteDeadline(steady_clock::time_point start);
+		virtual void analyzeBCET(int warmup, int repeat);
+		virtual void analyzeWCET(int warmup, int repeat);
+
+		virtual void assignDeadline();
+		void setAbsoluteDeadline(steady_clock::time_point start);
 	};
 }
-
-# endif

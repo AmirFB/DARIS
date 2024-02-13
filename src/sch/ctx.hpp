@@ -1,7 +1,7 @@
-# ifndef CTX_H
-# define CTX_H
+# pragma once
 
 # include <opr.hpp>
+# include <str.hpp>
 
 # include <cstdint>
 # include <mutex>
@@ -29,27 +29,47 @@ namespace FGPRS
 		mutable condition_variable* cv;
 		bool _changed = true;
 		steady_clock::time_point _finishTime;
-		vector<CUDAStream> _streams;
+		vector<MyStream> _streams;
 		shared_ptr<Operation> _headOperation;
+		int _runningCount = 0;
+		double quota = 0.0;
+		int _streamIndex = 0;
 
 	public:
-		vector<shared_ptr<MyContainer>> highContainers, lowContainers;
+		vector<shared_ptr<MyContainer>> highContainers, lowContainers, allContainers, dummyContainers;
+		int smCount;
 		static int streamCount;
-		static int smCount;
 		int index = -1;
-		vector<shared_ptr<Operation>> highLast, highDelayed, highOther, lowLast, lowDelayed, lowOther;
+		vector<shared_ptr<Operation>>
+			highLastDelayed, highLast, highDelayed, highOther,
+			lowLastDelayed, lowLast, lowDelayed, lowOther;
+		vector<shared_ptr<Operation>> running;
+		double highUtilization, activeUtilization, overallUtilization;
+		int missedCount = 0, acceptedCount = 0;
+		double acceptanceRate = 1;
 
 		MyContext() {}
-		MyContext(int index, bool isDefault = false);
+		MyContext(int index, int smCount, bool isDefault = false);
 		bool initialize();
 		bool select();
 		static bool selectDefault();
-		bool release();
 
-		void queueOperation(Operation* operation);
-		void dequeueOperation(Operation* operation);
+		void selectHeadOperation();
+		void queueOperation(shared_ptr<Operation> operation);
+		void dequeueOperation(shared_ptr<Operation> operation);
+		void releaseOperation(shared_ptr<Operation> operation);
+		void finishOperation(shared_ptr<Operation> operation);
 		steady_clock::time_point finishTime();
+
+		void updateUtilization();
+		void assignModule(shared_ptr<MyContainer> container);
+		void removeModule(shared_ptr<MyContainer> container);
+		void warmup();
+
+		void runDummies(shared_ptr<MyContainer> operation);
+		void stopDummies();
+		void waitDummies();
+
+		MyStream* getStream();
 	};
 }
-
-# endif

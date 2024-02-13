@@ -1,37 +1,44 @@
-#include <deque>
-#include <chrono>
-#include <vector>
-#include <memory>
+# pragma once
+
+# include "opr.hpp"
+# include "cnt.hpp"
+
+# include <deque>
+# include <chrono>
+# include <vector>
+# include <memory>
 
 using namespace std;
 using namespace chrono;
 
-class OperationTrackingRecord
+namespace FGPRS
 {
-public:
-	double executionTime;
-	bool missed;
-	int id;
+	class Operation;
+	class MyContainer;
 
-	OperationTrackingRecord(int id) : id(id), missed(false) {}
-};
-
-class ModuleTrackingRecord
-{
-public:
-	bool accepted, missed;
-	double executionTime, responseTime;
-	vector<shared_ptr<OperationTrackingRecord>> operations;
-
-	ModuleTrackingRecord(bool accepted, int count) : accepted(accepted), operations(count), missed(false) {}
-
-	void setResponseTime(double responseTime)
+	class OperationTrackingRecord
 	{
-		this->responseTime = responseTime;
+	public:
+		shared_ptr<Operation> operation;
+		int executionTime, wret;
+		bool missed;
 
-		executionTime = 0;
+		OperationTrackingRecord() {}
+		OperationTrackingRecord(Operation* operation, bool missed, int executionTime);
+	};
 
-		for (auto& operation : operations)
-			executionTime += operation->executionTime;
-	}
-};
+	class ModuleTrackingRecord
+	{
+	public:
+		bool accepted, missed;
+		int executionTime, responseTime, wret;
+		MyContainer* container;
+		vector<shared_ptr<OperationTrackingRecord>> operations;
+
+		ModuleTrackingRecord(MyContainer* container, bool accepted);
+		void setOperationExecutionTime(Operation* operation, bool missed, int executionTime);
+		void setOperationWret(Operation* operation, int wret);
+
+		void setResponseTime(int responseTime);
+	};
+}

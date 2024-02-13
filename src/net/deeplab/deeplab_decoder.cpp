@@ -180,7 +180,7 @@ double ASPPImpl::assignDeadline(double quota, int level, int contextIndex, doubl
 			/ regulatedExecutionTime[level] * quota;
 		o_modules[i]->stackedDeadline[level] = deadlineStack + o_modules[i]->relativeDeadline[level];
 
-		o_modules[i]->_parent->deadlineLogger->info("encoder->aspp->aspp{}-: {:.0f}", i + 1, o_modules[i]->relativeDeadline[level]);
+		// o_modules[i]->_parent->deadlineLogger->info("encoder->aspp->aspp{}-: {:.0f}", i + 1, o_modules[i]->relativeDeadline[level]);
 	}
 
 	o_aspppooling->relativeDeadline[level] =
@@ -190,7 +190,7 @@ double ASPPImpl::assignDeadline(double quota, int level, int contextIndex, doubl
 	deadlineStack += o_aspppooling->relativeDeadline[level];
 	o_aspppooling->stackedDeadline[level] = deadlineStack;
 
-	o_aspppooling->_parent->deadlineLogger->info("encoder->aspp->aspppooling-: {:.0f}", o_aspppooling->relativeDeadline[level]);
+	// o_aspppooling->_parent->deadlineLogger->info("encoder->aspp->aspppooling-: {:.0f}", o_aspppooling->relativeDeadline[level]);
 
 	o_project->relativeDeadline[level] =
 		o_project->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
@@ -198,7 +198,7 @@ double ASPPImpl::assignDeadline(double quota, int level, int contextIndex, doubl
 	deadlineStack += o_project->relativeDeadline[level];
 	o_project->stackedDeadline[level] = deadlineStack;
 
-	o_project->_parent->deadlineLogger->info("encoder->aspp->project-: {:.0f}", o_project->relativeDeadline[level]);
+	// o_project->_parent->deadlineLogger->info("encoder->aspp->project-: {:.0f}", o_project->relativeDeadline[level]);
 
 	return deadlineStack;
 }
@@ -354,7 +354,7 @@ double DeepLabV3PlusDecoderImpl::assignDeadline(double quota, int level, int con
 	usedDeadline += tempDeadline;
 	deadlineStack += tempDeadline;
 
-	o_aspp_seq->_parent->deadlineLogger->info("encoder->aspp-: {:.0f}", tempDeadline);
+	// o_aspp_seq->_parent->deadlineLogger->info("encoder->aspp-: {:.0f}", tempDeadline);
 
 	o_aspp_seq->relativeDeadline[level] =
 		o_aspp_seq->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
@@ -362,7 +362,7 @@ double DeepLabV3PlusDecoderImpl::assignDeadline(double quota, int level, int con
 	deadlineStack += o_aspp_seq->relativeDeadline[level];
 	o_aspp_seq->stackedDeadline[level] = deadlineStack;
 
-	o_aspp_seq->_parent->deadlineLogger->info("encoder->o_aspp_seq-: {:.0f}", o_aspp_seq->relativeDeadline[level]);
+	// o_aspp_seq->_parent->deadlineLogger->info("encoder->o_aspp_seq-: {:.0f}", o_aspp_seq->relativeDeadline[level]);
 
 	o_up->relativeDeadline[level] =
 		o_up->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
@@ -370,12 +370,12 @@ double DeepLabV3PlusDecoderImpl::assignDeadline(double quota, int level, int con
 	deadlineStack += o_up->relativeDeadline[level];
 	o_up->stackedDeadline[level] = deadlineStack;
 
-	o_up->_parent->deadlineLogger->info("encoder->up-: {:.0f}", o_up->relativeDeadline[level]);
+	// o_up->_parent->deadlineLogger->info("encoder->up-: {:.0f}", o_up->relativeDeadline[level]);
 
 	o_block1->relativeDeadline[level] = usedDeadline;
 	o_block1->stackedDeadline[level] = deadlineStack;
 
-	o_block1->_parent->deadlineLogger->info("encoder->block1-: {:.0f}", o_block1->relativeDeadline[level]);
+	// o_block1->_parent->deadlineLogger->info("encoder->block1-: {:.0f}", o_block1->relativeDeadline[level]);
 
 	o_block2->relativeDeadline[level] =
 		o_block2->getRegulatedExecutionTime(contextIndex) / regulatedExecutionTime[level] * quota;
@@ -383,7 +383,7 @@ double DeepLabV3PlusDecoderImpl::assignDeadline(double quota, int level, int con
 	deadlineStack += o_block2->relativeDeadline[level];
 	o_block2->stackedDeadline[level] = deadlineStack;
 
-	o_block2->_parent->deadlineLogger->info("encoder->block2-: {:.0f}", o_block2->relativeDeadline[level]);
+	// o_block2->_parent->deadlineLogger->info("encoder->block2-: {:.0f}", o_block2->relativeDeadline[level]);
 
 	return deadlineStack;
 }

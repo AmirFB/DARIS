@@ -1,172 +1,190 @@
-# include <memory>
+# pragma once
+
+# include "cnt.hpp"
+
 # include <torch/torch.h>
+# include <vector>
 
-# include <cnt.hpp>
-# include <sqnl.hpp>
-
+using namespace std;
+using namespace torch;
+using namespace torch::nn;
 using namespace FGPRS;
 
-struct BasicBlock : public MyContainer
+struct SimpleBlock : Module
 {
-	BasicBlock(int64_t inplanes, int64_t planes, int64_t stride = 1,
-		MySequential downsample = MySequential(),
-		int64_t groups = 1, int64_t base_width = 64,
-		int64_t dilation = 1);
+	Conv2d _conv1{ nullptr }, _conv2{ nullptr };
+	BatchNorm2d _bn1{ nullptr }, _bn2{ nullptr };
+	Sequential _downsample{ nullptr };
 
-	static const int64_t m_expansion = 1;
-
-	torch::nn::Conv2d m_conv1{ nullptr }, m_conv2{ nullptr };
-	torch::nn::BatchNorm2d m_bn1{ nullptr }, m_bn2{ nullptr };
-	torch::nn::ReLU m_relu{ nullptr };
-	MySequential m_downsample = MySequential();
-
-	int64_t m_stride;
-
-	torch::Tensor forward(torch::Tensor x);
-};
-
-struct Bottleneck : public MyContainer
-{
-	Bottleneck(int64_t inplanes, int64_t planes, int64_t stride = 1,
-		MySequential downsample = MySequential(),
-		int64_t groups = 1, int64_t base_width = 64,
-		int64_t dilation = 1);
-
-	static const int64_t m_expansion = 4;
-
-	torch::nn::Conv2d m_conv1{ nullptr }, m_conv2{ nullptr }, m_conv3{ nullptr };
-	torch::nn::BatchNorm2d m_bn1{ nullptr }, m_bn2{ nullptr }, m_bn3{ nullptr };
-	torch::nn::ReLU m_relu{ nullptr };
-	MySequential m_downsample = MySequential();
-
-	int64_t m_stride;
-
-	torch::Tensor forward(torch::Tensor x);
-};
-
-template <typename Block>
-struct ResNet : public MyContainer
-{
-	ResNet(const vector<int64_t> layers, int64_t num_classes = 1000,
-		bool zero_init_residual = false, int64_t groups = 1,
-		int64_t width_per_group = 64,
-		vector<int64_t> replace_stride_with_dilation = {});
-
-	int64_t m_inplanes = 64;
-	int64_t m_dilation = 1;
-	int64_t m_groups = 1;
-	int64_t m_base_width = 64;
-
-	torch::nn::Conv2d m_conv1{ nullptr };
-	torch::nn::BatchNorm2d m_bn1{ nullptr };
-	torch::nn::ReLU m_relu{ nullptr };
-	torch::nn::MaxPool2d m_maxpool{ nullptr };
-	MySequential m_layer1{ nullptr }, m_layer2{ nullptr },
-		m_layer3{ nullptr }, m_layer4{ nullptr };
-	torch::nn::AdaptiveAvgPool2d m_avgpool{ nullptr };
-	torch::nn::Linear m_fc{ nullptr };
-
-	MySequential _make_layer(int64_t planes, int64_t blocks,
-		int64_t stride = 1, bool dilate = false);
-
-	torch::Tensor _forward_impl(torch::Tensor x)
+	SimpleBlock(int64_t in_channels, int64_t out_channels, int64_t stride = 1, Sequential downsample = Sequential{ nullptr })
 	{
-		x = m_conv1->forward(x);
-		x = m_bn1->forward(x);
-		x = m_relu->forward(x);
-		x = m_maxpool->forward(x);
+		_conv1 = register_module("conv1",
+			Conv2d(Conv2dOptions(in_channels, out_channels, 3).stride(stride).padding(1).bias(false)));
+		_bn1 = register_module("bn1", BatchNorm2d(out_channels));
+		_conv2 = register_module("conv2",
+			Conv2d(Conv2dOptions(out_channels, out_channels, 3).stride(1).padding(1).bias(false)));
+		_bn2 = register_module("bn2", BatchNorm2d(out_channels));
 
-		x = m_layer1->forward(x);
-		x = m_layer2->forward(x);
-		x = m_layer3->forward(x);
-		x = m_layer4->forward(x);
+		if (!downsample.is_empty())
+			_downsample = register_module("downsample", downsample);
+	}
 
-		x = m_avgpool->forward(x);
-		x = torch::flatten(x, 1);
-		x = m_fc->forward(x);
+	Tensor forward(Tensor x)
+	{
+		Tensor residual = x;
+
+		x = relu(_bn1(_conv1(x)));
+		x = _bn2(_conv2(x));
+
+		if (!_downsample.is_empty())
+			residual = _downsample->forward(residual);
+
+		x += residual;
+		x = relu(x);
+
+		return x;
+	}
+};
+
+struct BottleneckBlock : Module
+{
+	Conv2d _conv1{ nullptr }, _conv2{ nullptr }, _conv3{ nullptr };
+	BatchNorm2d _bn1{ nullptr }, _bn2{ nullptr }, _bn3{ nullptr };
+	Sequential _downsample{ nullptr };
+
+	BottleneckBlock(int64_t in_channels, int64_t out_channels, int64_t stride = 1, Sequential downsample = Sequential())
+	{
+		_conv1 = register_module("conv1",
+			Conv2d(Conv2dOptions(in_channels, out_channels / 4, 1).bias(false)));
+		_bn1 = register_module("bn1", BatchNorm2d(out_channels / 4));
+		_conv2 = register_module("conv2",
+			Conv2d(Conv2dOptions(out_channels / 4, out_channels / 4, 3).stride(stride).padding(1).bias(false)));
+		_bn2 = register_module("bn2", BatchNorm2d(out_channels / 4));
+		_conv3 = register_module("conv3",
+			Conv2d(Conv2dOptions(out_channels / 4, out_channels, 1).bias(false)));
+		_bn3 = register_module("bn3", BatchNorm2d(out_channels));
+
+		if (!downsample.is_empty())
+			_downsample = register_module("downsample", downsample);
+	}
+
+	Tensor forward(Tensor x)
+	{
+		Tensor residual = x;
+
+		x = relu(_bn1(_conv1(x)));
+		x = relu(_bn2(_conv2(x)));
+		x = _bn3(_conv3(x));
+
+		if (!_downsample.is_empty())
+			residual = _downsample->forward(residual);
+
+		x += residual;
+		x = relu(x);
+
+		return x;
+	}
+};
+
+struct FCSoftmaxModule : Module
+{
+	Linear fc{ nullptr };
+
+	FCSoftmaxModule(int64_t in_features, int64_t num_classes)
+	{
+		fc = register_module("fc", Linear(in_features, num_classes));
+	}
+
+	Tensor forward(Tensor x)
+	{
+		x = adaptive_avg_pool2d(x, { 1, 1 });
+		x = x.view({ x.size(0), -1 });
+		x = fc(x);
+		return log_softmax(x, 1);
+	}
+};
+
+struct ResNet : MyContainer
+{
+private:
+	int64_t in_channels{ 3 };
+	int64_t _numClasses{ 1000 };
+	Sequential _layer1{ nullptr }, _layer2{ nullptr }, _layer3{ nullptr }, _layer4{ nullptr };
+	shared_ptr<Operation> _op1, _op2, _op3, _op4;
+
+public:
+	ResNet(const vector<int>& layer_sizes, int block_type, const vector<int>& num_blocks, int numClasses)
+		: _numClasses(numClasses)
+	{
+		auto layer1 = Sequential(
+			Conv2d(Conv2dOptions(in_channels, 64, 7).stride(2).padding(3).bias(false)),
+			BatchNorm2d(64),
+			ReLU(),
+			MaxPool2d(MaxPool2dOptions(3).stride(2).padding(1))
+		);
+
+		make_layer(layer1, layer_sizes[0], block_type, num_blocks[0]);
+		_layer1 = register_module("layer1", layer1);
+
+		auto layer2 = Sequential();
+		make_layer(layer2, layer_sizes[1], block_type, num_blocks[1], 2);
+		_layer2 = register_module("layer2", layer2);
+
+		auto layer3 = Sequential();
+		make_layer(layer3, layer_sizes[2], block_type, num_blocks[2], 2);
+		_layer3 = register_module("layer3", layer3);
+
+		auto layer4 = Sequential();
+		make_layer(layer4, layer_sizes[3], block_type, num_blocks[3], 2);
+		layer4->push_back(FCSoftmaxModule(layer_sizes[3], _numClasses));
+		_layer4 = register_module("layer4", layer4);
+	}
+
+private:
+	Sequential make_layer(Sequential& layer, int64_t channels, int block_type, int num_blocks, int64_t stride = 1)
+	{
+		auto downsample = Sequential{ nullptr };
+		int64_t in_channels = channels == 64 ? 64 : channels / 2;
+
+		if (stride != 1 || in_channels != channels)
+			downsample = Sequential(
+				Conv2d(Conv2dOptions(in_channels, channels, 1).stride(stride).bias(false)),
+				BatchNorm2d(channels)
+			);
+
+		if (block_type == 18 || block_type == 34)
+			layer->push_back(SimpleBlock(in_channels, channels, stride, downsample));
+
+		else
+			layer->push_back(BottleneckBlock(in_channels, channels, stride, downsample));
+
+		in_channels = channels;
+		stride = 1;
+
+		for (int i = 0; i < (num_blocks - 1); ++i)
+		{
+			if (block_type == 18 || block_type == 34)
+				layer->push_back(SimpleBlock(in_channels, channels, stride));
+
+			else
+				layer->push_back(BottleneckBlock(in_channels, channels, stride));
+		}
+
+		return layer;
+	}
+
+public:
+	Tensor forward(Tensor x)
+	{
+		x = _layer1->forward(x);
+		x = _layer2->forward(x);
+		x = _layer3->forward(x);
+		x = _layer4->forward(x);
 
 		return x;
 	}
 
-	torch::Tensor forward(torch::Tensor x)
-	{
-		cout << "ResNet forward" << endl;
-		return _forward_impl(x);
-	}
-
-	Tensor forwardL(Tensor x, int index)
-	{
-		switch (index)
-		{
-			case 0:
-				x = m_conv1->forward(x);
-				x = m_bn1->forward(x);
-				x = m_relu->forward(x);
-				return  m_maxpool->forward(x);
-			case 1:
-				return m_layer1->forward(x);
-			case 2:
-				return m_layer2->forward(x);
-			case 3:
-				return m_layer3->forward(x);
-			case 4:
-				return m_layer4->forward(x);
-			case 5:
-				x = m_avgpool->forward(x);
-				x = torch::flatten(x, 1);
-				return m_fc->forward(x);
-		}
-	}
+	void initialize(shared_ptr<MyContainer> module, string name, bool highPriority) override;
 };
 
-template <class Block>
-shared_ptr<ResNet<Block>>
-_resnet(const vector<int64_t>& layers, int64_t num_classes = 1000,
-	bool zero_init_residual = false, int64_t groups = 1,
-	int64_t width_per_group = 64,
-	const vector<int64_t>& replace_stride_with_dilation = {});
-
-shared_ptr<ResNet<BasicBlock>>
-resnet18(int64_t num_classes = 1000, bool zero_init_residual = false,
-	int64_t groups = 1, int64_t width_per_group = 64,
-	vector<int64_t> replace_stride_with_dilation = {});
-
-shared_ptr<ResNet<BasicBlock>>
-resnet34(int64_t num_classes = 1000, bool zero_init_residual = false,
-	int64_t groups = 1, int64_t width_per_group = 64,
-	vector<int64_t> replace_stride_with_dilation = {});
-
-shared_ptr<ResNet<Bottleneck>>
-resnet50(int64_t num_classes = 1000, bool zero_init_residual = false,
-	int64_t groups = 1, int64_t width_per_group = 64,
-	vector<int64_t> replace_stride_with_dilation = {});
-
-shared_ptr<ResNet<Bottleneck>>
-resnet101(int64_t num_classes = 1000, bool zero_init_residual = false,
-	int64_t groups = 1, int64_t width_per_group = 64,
-	vector<int64_t> replace_stride_with_dilation = {});
-
-shared_ptr<ResNet<Bottleneck>>
-resnet152(int64_t num_classes = 1000, bool zero_init_residual = false,
-	int64_t groups = 1, int64_t width_per_group = 64,
-	vector<int64_t> replace_stride_with_dilation = {});
-
-shared_ptr<ResNet<Bottleneck>>
-resnext50_32x4d(int64_t num_classes = 1000, bool zero_init_residual = false,
-	int64_t groups = 1, int64_t width_per_group = 64,
-	vector<int64_t> replace_stride_with_dilation = {});
-
-shared_ptr<ResNet<Bottleneck>>
-resnext101_32x8d(int64_t num_classes = 1000, bool zero_init_residual = false,
-	int64_t groups = 1, int64_t width_per_group = 64,
-	vector<int64_t> replace_stride_with_dilation = {});
-
-shared_ptr<ResNet<Bottleneck>>
-wide_resnet50_2(int64_t num_classes = 1000, bool zero_init_residual = false,
-	int64_t groups = 1, int64_t width_per_group = 64,
-	vector<int64_t> replace_stride_with_dilation = {});
-
-shared_ptr<ResNet<Bottleneck>>
-wide_resnet101_2(int64_t num_classes = 1000, bool zero_init_residual = false,
-	int64_t groups = 1, int64_t width_per_group = 64,
-	vector<int64_t> replace_stride_with_dilation = {});
+shared_ptr<ResNet> resnet18(int numClasses);

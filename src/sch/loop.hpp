@@ -1,5 +1,4 @@
-# ifndef __LOOP__
-# define __LOOP__
+# pragma once
 
 # include <cnt.hpp>
 
@@ -23,17 +22,9 @@ namespace FGPRS
 		int totalCount, compCount, missCount;
 
 		Loop() {}
-		Loop(string name, shared_ptr<MyContainer> container, double _frequency, int index = -1);
+		Loop(shared_ptr<MyContainer> container);
 
-		void prepare();
-		void initialize(int deadlineContextIndex, Tensor dummyInput, SchedulerType type, int level);
-		void start(Tensor* input, SchedulerType type, int level, bool logIt, int timer);
-		void stop();
+		void start(int timer);
 		void wait();
-
-		int completed() { return _container->meets + _container->missed; }
-		int met() { return _container->meets; }
 	};
 }
-
-# endif
