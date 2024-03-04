@@ -32,37 +32,9 @@ void Operation::setAbsoluteDeadline(steady_clock::time_point start)
 	absoluteDeadline = start + microseconds((int)stackedDeadline);
 }
 
-Tensor Operation::analyzeBCET(int warmup, int repeat, Tensor input)
+Tensor Operation::analyze(int warmup, int repeat, Tensor input, int* timer)
 {
 	Tensor output;
-
-	for (int i = 0; i < warmup; i++)
-	{
-		output = sequential->forward(input);
-		cudaDeviceSynchronize();
-	}
-
-	nvtxRangePush((fullName + " bcet").c_str());
-	auto start = steady_clock::now();
-
-	for (int i = 0; i < repeat; i++)
-	{
-		output = sequential->forward(input);
-		cudaDeviceSynchronize();
-	}
-
-	auto end = steady_clock::now();
-	nvtxRangePop();
-	auto duration = duration_cast<microseconds>(end - start).count();
-	bcet = duration / repeat;
-
-	return output;
-}
-
-Tensor Operation::analyzeWCET(int warmup, int repeat, Tensor input)
-{
-	Tensor output;
-
 	auto str = container->currentContext->getStream();
 	str->select();
 
@@ -72,7 +44,6 @@ Tensor Operation::analyzeWCET(int warmup, int repeat, Tensor input)
 		str->synchronize();
 	}
 
-	// nvtxRangePush((fullName + " wcet").c_str());
 	auto start = steady_clock::now();
 
 	for (int i = 0; i < repeat; i++)
@@ -82,11 +53,9 @@ Tensor Operation::analyzeWCET(int warmup, int repeat, Tensor input)
 	}
 
 	auto end = steady_clock::now();
-	// nvtxRangePop();
 
 	auto duration = duration_cast<microseconds>(end - start).count();
-	wcet = duration / repeat;
-	wret = wcet;
+	*timer = duration / repeat;
 
 	str->release();
 	cudaDeviceSynchronize();

@@ -34,7 +34,7 @@ int Scheduler::thresholdWindow;
 
 vector<shared_ptr<MyContainer>> Scheduler::highContainers, Scheduler::lowContainers;
 
-int Scheduler::missedCount = 0, Scheduler::acceptedCount = 0;
+int Scheduler::missedCount = 0, Scheduler::acceptedCount = 0, Scheduler::skippedCount = 0;
 double Scheduler::acceptanceRate = 1;
 
 bool Scheduler::initialize(int contextCount, int smCount)
@@ -103,7 +103,7 @@ float Scheduler::getMemoryPercentage()
 
 mutex globalMutex;
 
-void Scheduler::populateModules(
+void Scheduler::populateModulesByOrder(
 	vector<shared_ptr<MyContainer>> highContainers,
 	vector<shared_ptr<MyContainer>> lowContainers)
 {
@@ -144,6 +144,71 @@ void Scheduler::populateModules(
 			first = false;
 			index = firstLow;
 		}
+	}
+
+	for (int i = 0; i < contextCount; i++)
+	{
+		cout << "Context " << i << " has "
+			<< contextPool[i].highContainers.size() << " high priority modules and "
+			<< contextPool[i].lowContainers.size() << " low priority modules." << endl;
+
+		contextPool[i].warmup();
+	}
+}
+
+void Scheduler::populateModulesByUtilization(
+	vector<shared_ptr<MyContainer>> highContainers,
+	vector<shared_ptr<MyContainer>> lowContainers)
+{
+	MyContext* chosenContext;
+	double minUtil;
+
+	for (auto high : highContainers)
+		high->currentContext->removeModule(high);
+
+	for (auto low : lowContainers)
+		low->currentContext->removeModule(low);
+
+	for (auto high : highContainers)
+	{
+		minUtil = 100;
+
+		for (int i = 0; i < contextCount; i++)
+		{
+			if (contextPool[i].overallUtilization < minUtil)
+			{
+				minUtil = contextPool[i].overallUtilization;
+				chosenContext = &contextPool[i];
+			}
+		}
+
+		chosenContext->select();
+		chosenContext->assignModule(high);
+
+		high->to(kCUDA);
+		high->eval();
+		high->forwardRandom();
+	}
+
+	for (auto low : lowContainers)
+	{
+		minUtil = 100;
+
+		for (int i = 0; i < contextCount; i++)
+		{
+			if (contextPool[i].overallUtilization < minUtil)
+			{
+				minUtil = contextPool[i].overallUtilization;
+				chosenContext = &contextPool[i];
+			}
+		}
+
+		chosenContext->select();
+		chosenContext->assignModule(low);
+
+		low->to(kCUDA);
+		low->eval();
+		low->forwardRandom();
 	}
 
 	for (int i = 0; i < contextCount; i++)

@@ -7,41 +7,6 @@
 using namespace std;
 using namespace FGPRS;
 
-DeepLabV3Impl::DeepLabV3Impl(int _num_classes, string encoder_name, /*string pretrained_path,*/ int encoder_depth,
-	int decoder_channels, int in_channels, double upsampling)
-{
-	num_classes = _num_classes;
-	auto encoder_param = encoder_params();
-	vector<int> encoder_channels = encoder_param[encoder_name]["out_channels"];
-	if (!encoder_param.contains(encoder_name))
-		cout << "encoder name must in {resnet18, resnet34, resnet50, resnet101, resnet150, \
-				resnext50_32x4d, resnext101_32x8d, vgg11, vgg11_bn, vgg13, vgg13_bn, \
-				vgg16, vgg16_bn, vgg19, vgg19_bn,}";
-	if (encoder_param[encoder_name]["class_type"] == "resnet")
-		encoder = new ResNetEncoderImpl(encoder_param[encoder_name]["layers"], 1000, encoder_name);
-	else if (encoder_param[encoder_name]["class_type"] == "vgg")
-		encoder = new VGGImpl(encoder_param[encoder_name]["cfg"], 1000, encoder_param[encoder_name]["batch_norm"]);
-	else cout << "unknown error in backbone initialization";
-
-	// encoder->load_pretrained(pretrained_path);
-	encoder->make_dilated({ 5,4 }, { 4,2 });
-
-	decoder = DeepLabV3Decoder(encoder_channels[encoder_channels.size() - 1], decoder_channels);
-	head = SegmentationHead(decoder_channels, num_classes, 1, upsampling);
-
-	register_module("encoder", shared_ptr<Backbone>(encoder));
-	register_module("decoder", decoder);
-	register_module("head", head);
-}
-
-torch::Tensor DeepLabV3Impl::forward(torch::Tensor x)
-{
-	vector<torch::Tensor> features = encoder->features(x);
-	x = decoder->forward(features);
-	x = head->forward(x);
-	return x;
-}
-
 DeepLabV3PlusImpl::DeepLabV3PlusImpl(int _num_classes, string encoder_name, /*string pretrained_path,*/ int encoder_depth,
 	int encoder_output_stride, int decoder_channels, int in_channels, double upsampling)
 {
@@ -77,7 +42,7 @@ DeepLabV3PlusImpl::DeepLabV3PlusImpl(int _num_classes, string encoder_name, /*st
 
 	// m_encoder = *register_module("encoder", shared_ptr<Backbone>(encoder));
 	// register_module("encoder", shared_ptr<Backbone>(encoder));
-	m_encoder = register_module("encoder", shared_ptr<Backbone>(encoder));
+	m_encoder = register_module("encoder", shared_ptr<ResNet>(encoder));
 	m_decoder = register_module("decoder", DeepLabV3PlusDecoder(encoder_channels, decoder_channels, decoder_atrous_rates, encoder_output_stride));
 	m_head = register_module("head", SegmentationHead(decoder_channels, num_classes, 1, upsampling));
 }

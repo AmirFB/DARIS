@@ -16,10 +16,12 @@ namespace FGPRS
 	{
 	private:
 		MyContainer* _container;
+		bool _first = true;
 
 	public:
 		static int windowSize;
 		vector<shared_ptr<ModuleTrackingRecord>> records;
+		vector<shared_ptr<ModuleTrackingRecord>> finalRecords;
 
 		ModuleTracker() {}
 		ModuleTracker(MyContainer* container) : _container(container) {}

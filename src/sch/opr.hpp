@@ -53,8 +53,7 @@ namespace FGPRS
 			return op1->absoluteDeadline < op2->absoluteDeadline;
 		}
 
-		Tensor analyzeBCET(int warmup, int repeat, Tensor input);
-		Tensor analyzeWCET(int warmup, int repeat, Tensor input);
+		Tensor analyze(int warmup, int repeat, Tensor input, int* timer);
 		Tensor releaseSync(Tensor input);
 		future<Tensor> releaseAsync(Tensor input);
 		void setAbsoluteDeadline(steady_clock::time_point start);

@@ -23,11 +23,9 @@ namespace FGPRS
 		static MyContext* _defaultContext;
 		static vector<shared_ptr<ModuleTrackingRecord>> records;
 		static vector<shared_ptr<MyContainer>> highContainers, lowContainers;
-
-		static int missedCount, acceptedCount;
+		static int missedCount, acceptedCount, skippedCount;
 		static double acceptanceRate;
 
-	public:
 		static bool initialize(int contextCount, int smCount);
 		static MyContext* selectContextByIndex(int index);
 		static MyContext* selectDefaultContext();
@@ -38,7 +36,10 @@ namespace FGPRS
 		static float getFreeMemoryGB();
 		static float getMemoryPercentage();
 
-		static void populateModules(
+		static void populateModulesByOrder(
+			vector<shared_ptr<MyContainer>> highContainers,
+			vector<shared_ptr<MyContainer>> lowContainers);
+		static void populateModulesByUtilization(
 			vector<shared_ptr<MyContainer>> highContainers,
 			vector<shared_ptr<MyContainer>> lowContainers);
 		static MyContext* findReplacementContext(shared_ptr<MyContainer> container, MyContext* previousContext);

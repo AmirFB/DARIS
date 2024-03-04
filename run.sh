@@ -29,6 +29,6 @@ export PATH=/usr/local/cuda/:$PATH
 export PATH=/usr/local/cuda/bin:$PATH
 export PATH=/usr/local/cuda/extras/CUPTI/lib64:$PATH
 
-./build/fgprs 5 5 50 50 1 1000 10
+./build/fgprs 1 5 5 20 10 25 1 10000 10
 
 echo quit | nvidia-cuda-mps-control

@@ -48,7 +48,7 @@ void run(shared_ptr<MyContainer> container, int timer)
 	Tensor input = torch::rand({ 1, 3, container->inputSize, container->inputSize }).cuda();
 
 	srand(steady_clock::now().time_since_epoch().count());
-	auto delay = rand() % (int)round(container->interval) * 0;
+	auto delay = rand() % (int)round(container->interval);
 	startTime = steady_clock::now() + std::chrono::microseconds(delay);
 	auto endTime = startTime + milliseconds(timer);
 
@@ -82,11 +82,13 @@ void run(shared_ptr<MyContainer> container, int timer)
 			if (steady_clock::now() > nextTime)
 			{
 				cout << (container->highPriority ? "H" : "L") << "Container " << container->moduleName << " missed deadline" << endl;
+				container->missedCount++;
+				container->currentRecord->missed = true;
 
-				while (steady_clock::now() > (nextTime + interval * 0.1))
-				{
-					nextTime += interval;
-				}
+				// while (steady_clock::now() > (nextTime + interval * 0.1))
+				// {
+				// 	nextTime += interval;
+				// }
 			}
 		}
 

@@ -1,35 +1,57 @@
 # include <iostream>
 # include <vector>
 # include <cuda_profiler_api.h>
+# include <torch/script.h>
 
 # include "cnt.hpp"
 # include "schd.hpp"
 # include "resnet.hpp"
+# include "unet.hpp"
+# include "inception.hpp"
 # include "loop.hpp"
+# include "can.hpp"
 
 using namespace std;
 using namespace FGPRS;
 
 int contextCount, smCount, moduleCount, highCount, lowCount, streamCount;
+int resnetCount, resnetLowCount, resnetHighCount, unetCount, unetLowCount, unetHighCount;
 double oversubscription, highPercentage;
 vector<shared_ptr<MyContainer>> highNetworks, lowNetworks, networks;
 vector<shared_ptr<Loop>> loops;
 int timer, windowSize;
 
 const int warmup = 5, repeat = 10;
+const int frequency = 24, inputSize = 224;
+
+vector<string> types = { "resnet", "unet" };
 
 int main(int argc, char* argv[])
 {
-	// cudaProfilerStart();
-	contextCount = atoi(argv[1]);
-	oversubscription = atof(argv[2]);
-	moduleCount = atoi(argv[3]);
-	highPercentage = atof(argv[4]) / 100.0;
-	streamCount = atoi(argv[5]);
-	timer = atoi(argv[6]);
-	windowSize = atoi(argv[7]);
+	int index = 1;
+	int scenario = atoi(argv[index++]);
 
-	// moduleCount = contextCount * streamCount;
+	contextCount = atoi(argv[index++]);
+	oversubscription = atof(argv[index++]);
+
+	if (scenario == 1)
+	{
+		resnetCount = atoi(argv[index++]);
+		unetCount = atoi(argv[index++]);
+		highPercentage = atof(argv[index++]) / 100.0;
+
+		moduleCount = resnetCount + unetCount;
+		resnetHighCount = (int)ceil(resnetCount * highPercentage);
+		resnetLowCount = resnetCount - resnetHighCount;
+		unetHighCount = (int)ceil(unetCount * highPercentage);
+		unetLowCount = unetCount - unetHighCount;
+		highCount = resnetHighCount + unetHighCount;
+		lowCount = resnetLowCount + unetLowCount;
+	}
+
+	streamCount = atoi(argv[index++]);
+	timer = atoi(argv[index++]);
+	windowSize = atoi(argv[index++]);
 
 	smCount = (int)ceil(68 * oversubscription / contextCount);
 	smCount += smCount % 2;
@@ -39,6 +61,57 @@ int main(int argc, char* argv[])
 	lowCount = moduleCount - highCount;
 	MyContext::streamCount = streamCount;
 	ModuleTracker::windowSize = windowSize;
+
+	// auto res = resnet18(1000);
+	// auto un = unet(1000);
+	// auto input = torch::randn({ 1, 3, 224, 224 }, kCUDA);
+
+	// res->eval();
+	// un->eval();
+	// res->to(at::kCUDA);
+	// un->to(at::kCUDA);
+
+	// for (int i = 0; i < 100; i++)
+	// {
+	// 	auto output = res->forward(input);
+	// 	cudaDeviceSynchronize();
+	// 	output = un->forward(input);
+	// 	cudaDeviceSynchronize();
+	// }
+
+	// auto start = chrono::high_resolution_clock::now();
+
+	// for (int i = 0; i < 1000; i++)
+	// {
+	// 	auto output = res->forward(input);
+	// 	cudaDeviceSynchronize();
+	// }
+
+	// auto end = chrono::high_resolution_clock::now();
+	// auto duration = chrono::duration_cast<chrono::microseconds>(end - start);
+	// auto fps = 1000000.0 / duration.count() * 1000;
+
+	// cout << "Resnet18:" << endl
+	// 	<< "\t" << fps << " fps" << endl
+	// 	<< "\t" << duration.count() / 1000 << " us" << endl;
+
+	// start = chrono::high_resolution_clock::now();
+
+	// for (int i = 0; i < 1000; i++)
+	// {
+	// 	auto output = un->forward(input);
+	// 	cudaDeviceSynchronize();
+	// }
+
+	// end = chrono::high_resolution_clock::now();
+	// duration = chrono::duration_cast<chrono::microseconds>(end - start);
+	// fps = 1000000.0 / duration.count() * 1000;
+
+	// cout << "Unet:" << endl
+	// 	<< "\t" << fps << " fps" << endl
+	// 	<< "\t" << duration.count() / 1000 << " us" << endl;
+
+	// return 0;
 
 	cout << "Context count: " << contextCount << endl;
 	cout << "SM count: " << smCount << endl;
@@ -61,26 +134,44 @@ int main(int argc, char* argv[])
 	auto ctx = Scheduler::selectDefaultContext();
 	ctx->select();
 
-	for (int i = 0; i < highCount; i++)
+	for (int i = 0; i < resnetHighCount; i++)
 	{
 		highNetworks.push_back(resnet18(1000));
-		highNetworks[i]->initialize(highNetworks[i], "resH" + to_string(i + 1), true);
-		highNetworks[i]->setFrequency(30);
-		highNetworks[i]->inputSize = 224;
-		networks.push_back(highNetworks[i]);
+		highNetworks.back()->initialize(highNetworks.back(), "Hresnet" + to_string(i + 1), true);
+		highNetworks.back()->setFrequency(frequency);
+		highNetworks.back()->inputSize = inputSize;
+		networks.push_back(highNetworks.back());
 	}
 
-	for (int i = 0; i < lowCount; i++)
+	for (int i = 0; i < unetHighCount; i++)
+	{
+		highNetworks.push_back(unet(1000));
+		highNetworks.back()->initialize(highNetworks.back(), "Hunet" + to_string(i + 1), true);
+		highNetworks.back()->setFrequency(frequency);
+		highNetworks.back()->inputSize = inputSize;
+		networks.push_back(highNetworks.back());
+	}
+
+	for (int i = 0; i < resnetLowCount; i++)
 	{
 		lowNetworks.push_back(resnet18(1000));
-		lowNetworks[i]->initialize(lowNetworks[i], "resL" + to_string(i + 1), false);
-		lowNetworks[i]->setFrequency(30);
-		lowNetworks[i]->inputSize = 224;
-		networks.push_back(lowNetworks[i]);
+		lowNetworks.back()->initialize(lowNetworks.back(), "Lresnet" + to_string(i + 1), false);
+		lowNetworks.back()->setFrequency(frequency);
+		lowNetworks.back()->inputSize = inputSize;
+		networks.push_back(lowNetworks.back());
+	}
+
+	for (int i = 0; i < unetLowCount; i++)
+	{
+		lowNetworks.push_back(unet(1000));
+		lowNetworks.back()->initialize(lowNetworks.back(), "Lunet" + to_string(i + 1), false);
+		lowNetworks.back()->setFrequency(frequency);
+		lowNetworks.back()->inputSize = inputSize;
+		networks.push_back(lowNetworks.back());
 	}
 
 	cout << "Scheduler initialized." << endl;
-	Scheduler::populateModules(highNetworks, lowNetworks);
+	Scheduler::populateModulesByOrder(highNetworks, lowNetworks);
 
 	for (auto mod : networks)
 		mod->analyzeBCET(1, 1);
@@ -100,21 +191,19 @@ int main(int argc, char* argv[])
 		cout << "\"" << mod->moduleName << "\" WCET: " << mod->wcet << " us" << endl;
 	}
 
+	Scheduler::populateModulesByUtilization(highNetworks, lowNetworks);
+
 	for (auto mod : networks)
 		mod->assignDeadline();
 
 	for (auto mod : networks)
 		loops.push_back(make_shared<Loop>(Loop(mod)));
 
-	// cudaProfilerStart();
-
 	for (auto loop : loops)
 		loop->start(timer);
 
 	for (auto loop : loops)
 		loop->wait();
-
-	// cudaProfilerStop();
 
 	cout << endl << endl << endl << "-----------------------------" << endl;
 	cout << "High priority modules:" << endl << endl;
@@ -124,7 +213,7 @@ int main(int argc, char* argv[])
 		int minExec = INT_MAX, maxExec = 0, aveExec = 0;
 		int minResp = INT_MAX, maxResp = 0, aveResp = 0;
 
-		for (auto rec : mod->tracker.records)
+		for (auto rec : mod->tracker.finalRecords)
 		{
 			minExec = rec->executionTime < minExec ? rec->executionTime : minExec;
 			maxExec = rec->executionTime > maxExec ? rec->executionTime : maxExec;
@@ -135,8 +224,8 @@ int main(int argc, char* argv[])
 			aveResp += rec->responseTime;
 		}
 
-		aveExec /= mod->tracker.records.size();
-		aveResp /= mod->tracker.records.size();
+		aveExec /= mod->tracker.finalRecords.size();
+		aveResp /= mod->tracker.finalRecords.size();
 		cout << "Module \"" << mod->moduleName << "\":" << endl
 			<< "\tMinimum execution time: " << minExec << " us" << endl
 			<< "\tMaximum execution time: " << maxExec << " us" << endl
@@ -156,7 +245,7 @@ int main(int argc, char* argv[])
 		int minResp = INT_MAX, maxResp = 0, aveResp = 0;
 		int count = 0;
 
-		for (auto rec : mod->tracker.records)
+		for (auto rec : mod->tracker.finalRecords)
 		{
 			if (!rec->accepted)
 				continue;
@@ -194,7 +283,7 @@ int main(int argc, char* argv[])
 	{
 		int skipped = 0, missed = 0;
 
-		for (auto rec : mod->tracker.records)
+		for (auto rec : mod->tracker.finalRecords)
 		{
 			if (!rec->accepted)
 				skipped++;
@@ -207,14 +296,40 @@ int main(int argc, char* argv[])
 		maxAcceptance = mod->acceptanceRate > maxAcceptance ? mod->acceptanceRate : maxAcceptance;
 		aveAcceptance += mod->acceptanceRate;
 
-		cout << "Module \"" << mod->moduleName << "\":" << endl
-			<< "\tSkipped: " << skipped << " times" << endl
-			<< "\tMissed: " << missed << " times" << endl
-			<< "\tAccepted Rated: " << mod->acceptanceRate << endl;
+		// cout << "Module \"" << mod->moduleName << "\":" << endl
+		// 	<< "\tSkipped: " << skipped << " times" << endl
+		// 	<< "\tMissed: " << missed << " times" << endl
+		// 	<< "\tAccepted Rated: " << mod->acceptanceRate << endl;
 	}
 
 	aveAcceptance /= lowNetworks.size();
 	cout << "Minimum acceptance rate: " << minAcceptance << endl
 		<< "Maximum acceptance rate: " << maxAcceptance << endl
 		<< "Average acceptance rate: " << aveAcceptance << endl;
+
+	for (int i = 0; i < Scheduler::contextCount; i++)
+	{
+		auto ctx = &Scheduler::contextPool[i];
+
+		cout << "Context " << ctx->index << ":" << endl
+			<< "\tUtilization: " << ctx->overallUtilization << endl
+			<< "\tAcceptance Rate: " << ctx->acceptanceRate << endl;
+		// << "\tMissed: " << ctx->missedCount << endl
+		// << "\tAccepted: " << ctx->acceptedCount << endl;
+
+		for (auto mod : ctx->highContainers)
+		{
+			cout << "\t\t\"" << mod->moduleName << "\"" << endl
+				<< "\t\t\tUtilization: " << mod->utilizationPartitioned << endl;
+		}
+
+		for (auto mod : ctx->lowContainers)
+		{
+			cout << "\t\t\"" << mod->moduleName << "\":" << endl
+				<< "\t\t\tUtilization: " << mod->utilizationPartitioned << endl
+				<< "\t\t\tAcceptance Rate: " << mod->acceptanceRate << endl;
+			// << "\t\t\tMissed: " << mod->missedCount << endl
+			// << "\t\t\tSkipped: " << mod->skippedCount << endl;
+		}
+	}
 }

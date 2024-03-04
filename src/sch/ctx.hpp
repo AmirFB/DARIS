@@ -34,6 +34,8 @@ namespace FGPRS
 		int _runningCount = 0;
 		double quota = 0.0;
 		int _streamIndex = 0;
+		bool _stopDummies = false;
+		thread _dummyThread;
 
 	public:
 		vector<shared_ptr<MyContainer>> highContainers, lowContainers, allContainers, dummyContainers;
@@ -45,7 +47,7 @@ namespace FGPRS
 			lowLastDelayed, lowLast, lowDelayed, lowOther;
 		vector<shared_ptr<Operation>> running;
 		double highUtilization, activeUtilization, overallUtilization;
-		int missedCount = 0, acceptedCount = 0;
+		int missedCount = 0, acceptedCount = 0, skippedCount = 0;
 		double acceptanceRate = 1;
 
 		MyContext() {}

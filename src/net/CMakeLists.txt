@@ -2,4 +2,10 @@
 # include_directories(deeplab)
 # add_subdirectory(deeplab)
 
+target_sources(fgprs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inceptionA.cpp)
+target_sources(fgprs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inceptionB.cpp)
+target_sources(fgprs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inceptionC.cpp)
+target_sources(fgprs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inceptionD.cpp)
+target_sources(fgprs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inceptionE.cpp)
 target_sources(fgprs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/resnet.cpp)
+target_sources(fgprs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/unet.cpp)

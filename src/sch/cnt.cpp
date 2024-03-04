@@ -25,6 +25,19 @@ using namespace FGPRS;
 using namespace std;
 using namespace chrono;
 
+ParalleltialImpl::ParalleltialImpl(vector<shared_ptr<SequentialImpl>> parallels) : _parallels(parallels) {}
+
+Tensor ParalleltialImpl::forward(Tensor input)
+{
+	vector<Tensor> outputs;
+
+	for (auto parallel : _parallels)
+		outputs.push_back(parallel->forward(input));
+
+	Tensor output = cat(outputs, 1);
+	return output;
+}
+
 MyContainer::MyContainer(const MyContainer& container) : Module(container), tracker(ModuleTracker(this)) {}
 
 void MyContainer::setFrequency(int frequency)
@@ -43,13 +56,14 @@ void MyContainer::assignExecutionTime()
 
 void MyContainer::updateExecutionTime()
 {
-	if (_iterationCount < ModuleTracker::windowSize)
+	// if (_iterationCount < ModuleTracker::windowSize)
+	if (tracker.records.size() == 0)
 		return;
 
 	for (auto op : operations)
 	{
 		auto record = tracker.records.rbegin();
-		int count = ModuleTracker::windowSize;
+		int count = min(ModuleTracker::windowSize, (int)tracker.records.size());
 		op->wret = 0;
 
 		while (count--)
@@ -71,7 +85,7 @@ void MyContainer::updateUtilization()
 	updateExecutionTime();
 
 	utilizationIsolated = (double)bcet / interval;
-	utilizationPartitioned = (double)wret / interval;// / (Scheduler::contextCount * MyContext::streamCount);
+	utilizationPartitioned = (double)wret / interval;
 }
 
 void MyContainer::addOperation(shared_ptr<Operation> operation)
@@ -94,30 +108,17 @@ void MyContainer::reset()
 
 void MyContainer::runDummy()
 {
+	isDummy = true;
 	_stopDummy = false;
 
-	_dummyThread = thread([this]()
-		{
-			currentContext->select();
-			auto str = currentContext->getStream();
-			str->select();
+	currentContext->select();
+	auto str = currentContext->getStream();
+	str->select();
 
-			auto input = torch::randn({ 1, 3, 224, 224 }).cuda();
-			int repCount = 0;
-			auto start = steady_clock::now();
-
-			while (!_stopDummy)
-			{
-				auto output = forwardDummy(input, str);
-				str->synchronize();
-				repCount++;
-			}
-
-			auto end = steady_clock::now();
-			auto duration = duration_cast<microseconds>(end - start).count();
-			auto repDuration = duration / repCount;
-			str->release();
-		});
+	auto input = torch::randn({ 1, 3, inputSize, inputSize }).cuda();
+	auto output = forwardDummy(input, str);
+	str->release();
+	isDummy = false;
 }
 
 void MyContainer::stopDummy()
@@ -127,35 +128,40 @@ void MyContainer::stopDummy()
 
 void MyContainer::waitDummy()
 {
+	_stopDummy = true;
 	_dummyThread.join();
+}
+
+void MyContainer::analyzeOperations(int warmup, int repeat, bool isWcet)
+{
+	auto input = torch::randn({ 1, 3, inputSize, inputSize }).cuda();
+	int timer;
+
+	for (auto op : operations)
+	{
+		input = op->analyze(warmup, repeat, input, &timer);
+		isWcet ? (op->wcet = timer, wcet += timer) : (op->bcet = timer, bcet += timer);
+	}
 }
 
 void MyContainer::analyzeBCET(int warmup, int repeat)
 {
 	bcet = 0;
-	Scheduler::selectDefaultContext()->select();
-	auto input = torch::randn({ 1, 3, inputSize, inputSize }).cuda();
-
-	for (auto op : operations)
-	{
-		input = op->analyzeBCET(warmup, repeat, input);
-		bcet += op->bcet;
-	}
+	currentContext->select();
+	analyzeOperations(warmup, repeat, false);
 }
 
 void MyContainer::analyzeWCET(int warmup, int repeat)
 {
 	wcet = 0;
 	currentContext->select();
-	auto input = torch::randn({ 1, 3, inputSize, inputSize }).cuda();
 	Scheduler::runDummies(operations[0]->container);
 	this_thread::sleep_for(chrono::milliseconds(10));
 
+	analyzeOperations(warmup, repeat, true);
+
 	for (auto op : operations)
-	{
-		input = op->analyzeWCET(warmup, repeat, input);
-		wcet += op->wcet;
-	}
+		op->wret = op->wcet;
 
 	Scheduler::stopDummies();
 	Scheduler::waitDummies();
@@ -202,23 +208,62 @@ bool MyContainer::doesMeetDeadline()
 
 bool MyContainer::isFair()
 {
-	return (acceptanceRate < Scheduler::acceptanceRate * 1.25);
+	return (Scheduler::acceptanceRate == 0) || (acceptanceRate < Scheduler::acceptanceRate * 1.5);
 }
 
 int MyContainer::admissionTest()
 {
+	double minUtilization = 1000;
+	MyContext* context = nullptr;
+
+	if (highPriority)
+		return 100;
+
+	else if (_iterationCount > ModuleTracker::windowSize && acceptanceRate < (Scheduler::acceptanceRate * 0.5))
+	{
+		for (int i = 0; i < Scheduler::contextCount; i++)
+		{
+			if ((Scheduler::contextPool[i].activeUtilization < minUtilization) &&
+				(Scheduler::contextPool[i].overallUtilization < (currentContext->overallUtilization - utilizationPartitioned * 0.99)))
+			{
+				minUtilization = Scheduler::contextPool[i].activeUtilization;
+				context = &Scheduler::contextPool[i];
+			}
+		}
+
+		if (context == nullptr)
+			return -10;
+
+		// if ((minUtilization + utilizationPartitioned) < 1.1)
+		{
+			cout << "Dontainer " << moduleName << " moved from " << currentContext->index << " to " << context->index << endl
+				<< "\tMod Utilization: " << utilizationPartitioned << endl
+				<< "\tOld Utilization: " << currentContext->activeUtilization << endl
+				<< "\tNew Utilization: " << context->activeUtilization << endl;
+
+			currentContext->removeModule(operations[0]->container);
+			currentContext = context;
+			currentContext->assignModule(operations[0]->container);
+
+			return 10;
+		}
+
+		return -20;
+	}
+
 	if (!isFair())
 		return -1;
 
 	if (doesMeetDeadline())
 		return 1;
-	// return -3;
-	double minUtilization = currentContext->activeUtilization;
-	MyContext* context = nullptr;
+
+	minUtilization = currentContext->activeUtilization;
+	context = nullptr;
 
 	for (int i = 0; i < Scheduler::contextCount; i++)
 	{
-		if (Scheduler::contextPool[i].activeUtilization < minUtilization)
+		if ((Scheduler::contextPool[i].activeUtilization < minUtilization) &&
+			(Scheduler::contextPool[i].overallUtilization < (currentContext->overallUtilization - utilizationPartitioned)))
 		{
 			minUtilization = Scheduler::contextPool[i].activeUtilization;
 			context = &Scheduler::contextPool[i];
@@ -230,7 +275,7 @@ int MyContainer::admissionTest()
 
 	if ((minUtilization + utilizationPartitioned) < 1.0)
 	{
-		cout << "Container " << moduleName << " moved from " << currentContext->index << " to " << context->index << endl
+		cout << "Eontainer " << moduleName << " moved from " << currentContext->index << " to " << context->index << endl
 			<< "\tMod Utilization: " << utilizationPartitioned << endl
 			<< "\tOld Utilization: " << currentContext->activeUtilization << endl
 			<< "\tNew Utilization: " << context->activeUtilization << endl;
@@ -248,53 +293,59 @@ int MyContainer::admissionTest()
 void MyContainer::updateAcceptanceRate(bool accepted)
 {
 	acceptedCount += accepted;
-	missedCount += !accepted;
-	acceptanceRate = (double)acceptedCount / (acceptedCount + missedCount);
+	skippedCount += !accepted;
+	acceptanceRate = (double)acceptedCount / (acceptedCount + skippedCount);
 
 	currentContext->acceptedCount += accepted;
-	currentContext->missedCount += !accepted;
+	currentContext->skippedCount += !accepted;
 	currentContext->acceptanceRate =
 		(double)currentContext->acceptedCount /
-		(currentContext->acceptedCount + currentContext->missedCount);
+		(currentContext->acceptedCount + currentContext->skippedCount);
 
 	Scheduler::acceptedCount += accepted;
-	Scheduler::missedCount += !accepted;
-	Scheduler::acceptanceRate = (double)Scheduler::acceptedCount / (Scheduler::acceptedCount + Scheduler::missedCount);
+	Scheduler::skippedCount += !accepted;
+	Scheduler::acceptanceRate = (double)Scheduler::acceptedCount / (Scheduler::acceptedCount + Scheduler::skippedCount);
+}
+
+Tensor MyContainer::releaseOperations(Tensor input)
+{
+	auto opPrev = operations.back();
+
+	for (int i = 0; i < operations.size(); i++)
+	{
+		auto op = operations[i];
+		op->priorDelayed = opPrev->delayed;
+		input = op->releaseSync(input);
+		opPrev = op;
+	}
+
+	return input;
 }
 
 bool MyContainer::release(Tensor input)
 {
 	auto accepted = true;
 	reset();
-	auto opPrev = operations.back();
 	_iterationCount++;
-	int testResult = admissionTest();
-	testResult = doesMeetDeadline();
-	accepted = highPriority || (testResult > 0);
+	int testResult = highPriority ? 1000 : admissionTest();
+
+	accepted = testResult > 0;
 
 	if (!highPriority)
 		updateAcceptanceRate(accepted);
 
 	if (!accepted)
 	{
-		cout << "Container " << moduleName << " skipped" << endl
-			<< "\tTest Result: " << testResult << endl
-			<< "\tContainer Acceptance Rate: " << acceptanceRate << endl
-			<< "\tContext Acceptance Rate: " << currentContext->acceptanceRate << endl
-			<< "\tScheduler Acceptance Rate: " << Scheduler::acceptanceRate << endl
-			<< "\tModule Utilization: " << utilizationPartitioned << endl
-			<< "\tContext Utilization: " << currentContext->activeUtilization << endl;
+		// cout << "Container " << moduleName << " skipped" << endl;
+		// << "\tTest Result: " << testResult << endl
+		// 	<< "\tContainer Acceptance Rate: " << acceptanceRate << endl
+		// 	<< "\tContext Acceptance Rate: " << currentContext->acceptanceRate << endl
+		// 	<< "\tScheduler Acceptance Rate: " << Scheduler::acceptanceRate << endl
+		// 	<< "\tModule Utilization: " << utilizationPartitioned << endl
+		// 	<< "\tContext Utilization: " << currentContext->activeUtilization << endl;
 		auto record = make_shared<ModuleTrackingRecord>(this, false);
 		tracker.addRecord(record);
 		return false;
-	}
-
-	if (!highPriority)
-	{
-		cout << "Container " << moduleName << " passed" << endl
-			<< "\tContainer Acceptance Rate: " << acceptanceRate << endl
-			<< "\tContext Acceptance Rate: " << currentContext->acceptanceRate << endl
-			<< "\tScheduler Acceptance Rate: " << Scheduler::acceptanceRate << endl;
 	}
 
 	active = true;
@@ -305,16 +356,9 @@ bool MyContainer::release(Tensor input)
 	currentRecord = record;
 
 	auto start = steady_clock::now();
-
-	for (int i = 0; i < operations.size(); i++)
-	{
-		auto op = operations[i];
-		op->priorDelayed = opPrev->delayed;
-		input = op->releaseSync(input);
-		opPrev = op;
-	}
-
+	releaseOperations(input);
 	auto end = steady_clock::now();
+
 	auto duration = duration_cast<microseconds>(end - start).count();
 	record->setResponseTime(duration);
 	tracker.addRecord(record);
@@ -324,13 +368,5 @@ bool MyContainer::release(Tensor input)
 	active = false;
 	currentContext->updateUtilization();
 
-	if (testResult == -2)
-	{
-		cout << "Container " << moduleName << " moved" << endl
-			<< "\tOld wret: " << temp << endl
-			<< "\tNew wret: " << wret << endl;
-	}
-
-	// return input;
 	return true;
 }

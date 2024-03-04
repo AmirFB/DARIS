@@ -24,6 +24,17 @@ namespace FGPRS
 	class Operation;
 	class MyStream;
 
+	class ParalleltialImpl : public Module
+	{
+	private:
+		vector<shared_ptr<SequentialImpl>> _parallels;
+
+	public:
+		ParalleltialImpl(vector<shared_ptr<SequentialImpl>> parallels);
+		Tensor forward(Tensor input);
+	};
+	TORCH_MODULE(Paralleltial);
+
 	class MyContainer : public Module
 	{
 	private:
@@ -40,8 +51,9 @@ namespace FGPRS
 		int operationCount;
 		int inputSize;
 		bool active = false;
-		int missedCount = 0, acceptedCount = 0;
+		int missedCount = 0, acceptedCount = 0, skippedCount = 0;
 		double acceptanceRate = 0;
+		bool isDummy = false;
 
 		ModuleTracker tracker;
 		shared_ptr<ModuleTrackingRecord> currentRecord;
@@ -61,11 +73,11 @@ namespace FGPRS
 		void reset();
 		virtual Tensor forward(Tensor input) { return input; }
 		Tensor forwardRandom() { return forward(torch::rand({ 1, 3, inputSize, inputSize }).cuda()); }
-		virtual Tensor forwardDummy(Tensor input, MyStream* str);
 		bool doesMeetDeadline();
 		bool isFair();
 		int admissionTest();
 		void updateAcceptanceRate(bool accepted);
+		virtual Tensor releaseOperations(Tensor input);
 		virtual bool release(Tensor input);
 
 		void runDummy();
@@ -77,5 +89,9 @@ namespace FGPRS
 
 		virtual void assignDeadline();
 		void setAbsoluteDeadline(steady_clock::time_point start);
+
+	private:
+		virtual Tensor forwardDummy(Tensor input, MyStream* str);
+		virtual void analyzeOperations(int warmup, int repeat, bool isWcet);
 	};
 }

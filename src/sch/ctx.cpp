@@ -303,14 +303,9 @@ void MyContext::updateUtilization()
 		aUtil += mod->active ? mod->utilizationPartitioned : 0;
 	}
 
-	highUtilization = hUtil;
-	activeUtilization = aUtil;
-	overallUtilization = oUtil;
-
-	// cout << "Context " << index << " utilization:" << endl
-	// 	<< "\tHigh: " << highUtilization << endl
-	// 	<< "\tActive: " << activeUtilization << endl
-	// 	<< "\tOverall: " << overallUtilization << endl;
+	highUtilization = hUtil / streamCount;
+	activeUtilization = aUtil / streamCount;
+	overallUtilization = oUtil / streamCount;
 }
 
 void MyContext::assignModule(shared_ptr<MyContainer> container)
@@ -322,6 +317,8 @@ void MyContext::assignModule(shared_ptr<MyContainer> container)
 
 	allContainers.push_back(container);
 	container->currentContext = this;
+
+	updateUtilization();
 }
 
 void MyContext::removeModule(shared_ptr<MyContainer> container)
@@ -332,6 +329,8 @@ void MyContext::removeModule(shared_ptr<MyContainer> container)
 		lowContainers.erase(remove(lowContainers.begin(), lowContainers.end(), container), lowContainers.end());
 
 	allContainers.erase(remove(allContainers.begin(), allContainers.end(), container), allContainers.end());
+
+	updateUtilization();
 }
 
 void MyContext::warmup()
@@ -352,34 +351,56 @@ void MyContext::warmup()
 
 void MyContext::runDummies(shared_ptr<MyContainer> module)
 {
-	int maxCount = streamCount - (module->currentContext == this);
+	_stopDummies = false;
 
-	dummyContainers.clear();
-	shuffle(allContainers.begin(), allContainers.end(), default_random_engine());
+	_dummyThread = thread([this, module]()
+		{
+			int maxCount = streamCount - (module->currentContext == this);
 
-	for (auto container : allContainers)
-	{
-		if (container == module)
-			continue;
+			if (maxCount == 0)
+				return;
 
-		if (dummyContainers.size() == maxCount)
-			break;
+			while (!_stopDummies)
+			{
+				thread* th = new thread[maxCount];
 
-		dummyContainers.push_back(container);
-		container->runDummy();
-	}
+				for (int i = 0; i < maxCount; i++)
+				{
+					th[i] = thread([this, module]()
+						{
+							while (!_stopDummies)
+							{
+								shared_ptr<MyContainer> cnt;
+
+								while (true)
+								{
+									cnt = allContainers[rand() % allContainers.size()];
+
+									if (cnt == module || cnt->isDummy)
+										continue;
+
+									break;
+								}
+
+								cnt->runDummy();
+							}
+						});
+				}
+
+				for (int i = 0; i < maxCount; i++)
+					th[i].join();
+			}
+		});
 }
 
 void MyContext::stopDummies()
 {
-	for (auto container : dummyContainers)
-		container->stopDummy();
+	_stopDummies = true;
 }
 
 void MyContext::waitDummies()
 {
-	for (auto container : dummyContainers)
-		container->waitDummy();
+	_dummyThread.join();
 }
 
 MyStream* MyContext::getStream()
