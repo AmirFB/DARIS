@@ -18,12 +18,14 @@ namespace FGPRS
 	{
 	private:
 		shared_ptr<CUDAStream> _stream;
-		MyContext* _context;
+		bool _isFake = false;
 
 	public:
 		bool busy = false;
+		MyContext* context;
 
-		MyStream(MyContext* context);
+		MyStream() {}
+		MyStream(MyContext* context, bool isFake = false);
 		bool select();
 		void synchronize();
 		void release();

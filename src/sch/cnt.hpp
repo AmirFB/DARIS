@@ -2,8 +2,8 @@
 
 # include <str.hpp>
 # include <opr.hpp>
-# include <ctxd.hpp>
 # include <trc.hpp>
+# include <ctx.hpp>
 
 # include <torch/torch.h>
 
@@ -46,6 +46,7 @@ namespace FGPRS
 	public:
 		bool highPriority = false;
 		vector<shared_ptr<Operation>> operations;
+		shared_ptr<Operation> _singleOperation;
 		int interval, frequency;
 		MyContext* currentContext;
 		int operationCount;
@@ -54,6 +55,7 @@ namespace FGPRS
 		int missedCount = 0, acceptedCount = 0, skippedCount = 0;
 		double acceptanceRate = 0;
 		bool isDummy = false;
+		int batchSize = 1;
 
 		ModuleTracker tracker;
 		shared_ptr<ModuleTrackingRecord> currentRecord;
@@ -64,7 +66,11 @@ namespace FGPRS
 		MyContainer() {}
 		MyContainer(const MyContainer& container);
 
-		virtual void initialize(shared_ptr<MyContainer> container, string name, bool highPriority) {}
+	private:
+		virtual void initialize(shared_ptr<MyContainer> container) {}
+
+	public:
+		void initialize(shared_ptr<MyContainer> container, string name, bool highPriority, int type = 0);
 		void setFrequency(int frequency);
 		void assignExecutionTime();
 		void updateExecutionTime();
@@ -72,7 +78,7 @@ namespace FGPRS
 		void addOperation(shared_ptr<Operation> operation);
 		void reset();
 		virtual Tensor forward(Tensor input) { return input; }
-		Tensor forwardRandom() { return forward(torch::rand({ 1, 3, inputSize, inputSize }).cuda()); }
+		Tensor forwardRandom() { return forward(torch::rand({ batchSize, 3, inputSize, inputSize }).cuda()); }
 		bool doesMeetDeadline();
 		bool isFair();
 		int admissionTest();
@@ -89,9 +95,20 @@ namespace FGPRS
 
 		virtual void assignDeadline();
 		void setAbsoluteDeadline(steady_clock::time_point start);
+		virtual void analyzeOperations(int warmup, int repeat, bool isWcet);
 
 	private:
 		virtual Tensor forwardDummy(Tensor input, MyStream* str);
-		virtual void analyzeOperations(int warmup, int repeat, bool isWcet);
+	};
+
+	class MyModule : public Module
+	{
+	public:
+		virtual Tensor forward(Tensor input) { return input; }
+		virtual Tensor forwardNL(Tensor input, MyContext* ctx, MyStream* mainStream)
+		{
+			cout << "forwardNL not implemented" << endl;
+			return input;
+		}
 	};
 }

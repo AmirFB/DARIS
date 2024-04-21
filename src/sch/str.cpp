@@ -5,13 +5,17 @@
 
 using namespace FGPRS;
 
-MyStream::MyStream(MyContext* context) : _context(context)
+MyStream::MyStream(MyContext* context, bool isFake) : context(context), _isFake(false)
 {
-	_stream = make_shared<CUDAStream>(getStreamFromPool(false, context->index));
+	if (!_isFake)
+		_stream = make_shared<CUDAStream>(getStreamFromPool(false, context->index));
 }
 
 bool MyStream::select()
 {
+	if (_isFake)
+		return true;
+
 	if (busy)
 		return false;
 
@@ -23,11 +27,15 @@ bool MyStream::select()
 
 void MyStream::synchronize()
 {
-	_stream->synchronize();
+	if (!_isFake)
+		_stream->synchronize();
 }
 
 void MyStream::release()
 {
-	busy = false;
-	synchronize();
+	if (!_isFake)
+	{
+		busy = false;
+		synchronize();
+	}
 }

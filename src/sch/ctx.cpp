@@ -1,6 +1,5 @@
 # include <ctx.hpp>
 
-# include <ctxd.hpp>
 # include <schd.hpp>
 
 # include <iostream>
@@ -18,7 +17,8 @@ using namespace FGPRS;
 using namespace std;
 using namespace torch;
 
-int MyContext::streamCount;
+int MyContext::mainStreamCount;
+int MyContext::secondaryStreamCount;
 
 MyContext::MyContext(int index, int smCount, bool isDefault) :
 	index(index), smCount(smCount), _default(isDefault),
@@ -34,6 +34,8 @@ MyContext::MyContext(int index, int smCount, bool isDefault) :
 	lowDelayed = vector<shared_ptr<Operation>>(0);
 	lowOther = vector<shared_ptr<Operation>>(0);
 	running = vector<shared_ptr<Operation>>(0);
+
+	remainingSecondaryStreams = secondaryStreamCount;
 }
 
 bool MyContext::initialize()
@@ -65,8 +67,11 @@ bool MyContext::initialize()
 	result &= cuCtxSetLimit(CU_LIMIT_MALLOC_HEAP_SIZE,
 		temp + ((Scheduler::contextCount + 1) << 16)) == CUDA_SUCCESS || _default;
 
-	for (int i = 0; i < streamCount; i++)
-		_streams.push_back(MyStream(this));
+	for (int i = 0; i < mainStreamCount; i++)
+		_mainStreams.push_back(MyStream(this));
+
+	for (int i = 0; i < secondaryStreamCount; i++)
+		_secondaryStreams.push_back(MyStream(this));
 
 	return result;
 }
@@ -86,7 +91,7 @@ void MyContext::queueOperation(shared_ptr<Operation> operation)
 {
 	if (operation->highPriority)
 	{
-		if (operation->isLast && operation->priorDelayed)
+		if (!operation->isLast && operation->priorDelayed)
 		{
 			highLastDelayed.push_back(operation);
 			sort(highLastDelayed.begin(), highLastDelayed.end(),
@@ -211,27 +216,20 @@ void MyContext::releaseOperation(shared_ptr<Operation> operation)
 
 	// selectHeadOperation();
 
-	if (_runningCount < streamCount && _headOperation == nullptr)
+	if (_runningCount < mainStreamCount && _headOperation == nullptr)
 	{
 		_runningCount++;
 		running.push_back(operation);
 		_pQueueMutex->unlock();
-		// if (_runningCount < streamCount)
-		// 	cout << "#\n";
-		// else
-		// 	cout << "@\n";
 		return;
 	}
-
-	if (_runningCount < (streamCount - 1))
-		cout << "# " << operation->fullName << endl;
 
 	queueOperation(operation);
 	selectHeadOperation();
 	_pQueueMutex->unlock();
 	unique_lock<mutex> lock(*_pMutex);
 
-	while (_runningCount >= streamCount || operation != _headOperation)
+	while (_runningCount >= mainStreamCount || operation != _headOperation)
 		cv->wait(lock);
 
 	_pQueueMutex->lock();
@@ -303,9 +301,9 @@ void MyContext::updateUtilization()
 		aUtil += mod->active ? mod->utilizationPartitioned : 0;
 	}
 
-	highUtilization = hUtil / streamCount;
-	activeUtilization = aUtil / streamCount;
-	overallUtilization = oUtil / streamCount;
+	highUtilization = hUtil / mainStreamCount;
+	activeUtilization = aUtil / mainStreamCount;
+	overallUtilization = oUtil / mainStreamCount;
 }
 
 void MyContext::assignModule(shared_ptr<MyContainer> container)
@@ -340,7 +338,14 @@ void MyContext::warmup()
 
 	for (auto container : allContainers)
 	{
-		for (auto str : _streams)
+		for (auto str : _mainStreams)
+		{
+			str.select();
+			container->forwardRandom();
+			str.release();
+		}
+
+		for (auto str : _secondaryStreams)
 		{
 			str.select();
 			container->forwardRandom();
@@ -355,7 +360,7 @@ void MyContext::runDummies(shared_ptr<MyContainer> module)
 
 	_dummyThread = thread([this, module]()
 		{
-			int maxCount = streamCount - (module->currentContext == this);
+			int maxCount = mainStreamCount - (module->currentContext == this);
 
 			if (maxCount == 0)
 				return;
@@ -405,9 +410,18 @@ void MyContext::waitDummies()
 
 MyStream* MyContext::getStream()
 {
-	for (auto& stream : _streams)
+	for (auto& stream : _mainStreams)
 		if (!stream.busy)
 			return &stream;
 
 	return nullptr;
+}
+
+MyStream* MyContext::getSecondaryStream(MyStream* mainStream)
+{
+	for (auto& stream : _secondaryStreams)
+		if (!stream.busy)
+			return &stream;
+
+	return mainStream;
 }

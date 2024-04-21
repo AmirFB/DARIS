@@ -1,23 +1,55 @@
 # include "inception.hpp"
 
+# include <ctx.hpp>
+
+# include <future>
+
 using namespace std;
 using namespace FGPRS;
 using namespace torch;
 using namespace nn;
 
-void InceptionAImpl::initialize(shared_ptr<MyContainer> module, string name, bool highPriority)
+Tensor InceptionA::forwardNL(Tensor input, MyContext* ctx, MyStream* mainStream)
 {
-	moduleName = name;
-	this->highPriority = highPriority;
+	future<Tensor> th1x1 = async(launch::async, [&](MyStream* str)
+		{
+			str->context->select();
+			str->select();
+			Tensor branch1x1 = this->branch1x1->forward(input);
+			str->release();
+			return branch1x1;
+		}, ctx->getSecondaryStream(mainStream));
 
-	_oBranch1x1 = make_shared<Operation>("branch1x1", module, (Sequential(branch1x1)).ptr(), false);
-	_oBranch5x5 = make_shared<Operation>("branch5x5", module, (Sequential(branch5x5_1, branch5x5_2)).ptr(), false);
-	_oBranch3x3dbl = make_shared<Operation>("branch3x3", module,
-		(Sequential(branch3x3dbl_1, branch3x3dbl_2, branch3x3dbl_3)).ptr(), false);
-	_oBranchPool = make_shared<Operation>("branchPool", module, (Sequential(branch_pool_1, branch_pool_2)).ptr(), false);
+	future<Tensor> th5x5 = async(launch::async, [&](MyStream* str)
+		{
+			str->context->select();
+			str->select();
+			Tensor branch5x5 = this->branch5x5_1->forward(input);
+			branch5x5 = this->branch5x5_2->forward(branch5x5);
+			str->release();
+			return branch5x5;
+		}, ctx->getSecondaryStream(mainStream));
 
-	addOperation(_oBranch1x1);
-	addOperation(_oBranch5x5);
-	addOperation(_oBranch3x3dbl);
-	addOperation(_oBranchPool);
+	future<Tensor> th3x3dbl = async(launch::async, [&](MyStream* str)
+		{
+			str->context->select();
+			str->select();
+			Tensor branch3x3dbl = this->branch3x3dbl_1->forward(input);
+			branch3x3dbl = this->branch3x3dbl_2->forward(branch3x3dbl);
+			branch3x3dbl = this->branch3x3dbl_3->forward(branch3x3dbl);
+			str->release();
+			return branch3x3dbl;
+		}, ctx->getSecondaryStream(mainStream));
+
+	future<Tensor> thPool = async(launch::async, [&](MyStream* str)
+		{
+			str->context->select();
+			str->select();
+			Tensor branch_pool = this->branch_pool_1->forward(input);
+			branch_pool = this->branch_pool_2->forward(branch_pool);
+			str->release();
+			return branch_pool;
+		}, ctx->getSecondaryStream(mainStream));
+
+	return cat({ th1x1.get(), th5x5.get(), th3x3dbl.get(), thPool.get() }, 1);
 }

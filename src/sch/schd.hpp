@@ -18,6 +18,8 @@ namespace FGPRS
 	class Scheduler
 	{
 	public:
+		// static bool isLastHigh, isStaging, isPriorDelayed, isFixedPriority, isWretUsed;
+
 		static int smCount, contextCount, maxSmCount, thresholdWindow;
 		static MyContext* contextPool;
 		static MyContext* _defaultContext;

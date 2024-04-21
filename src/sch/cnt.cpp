@@ -3,7 +3,6 @@
 # include <cnt.hpp>
 
 # include <schd.hpp>
-# include <ctxd.hpp>
 # include "trc.hpp"
 
 # include <torch/torch.h>
@@ -40,6 +39,21 @@ Tensor ParalleltialImpl::forward(Tensor input)
 
 MyContainer::MyContainer(const MyContainer& container) : Module(container), tracker(ModuleTracker(this)) {}
 
+void MyContainer::initialize(shared_ptr<MyContainer> container, string name, bool highPriority, int type)
+{
+	moduleName = name;
+	this->highPriority = highPriority;
+
+	if (type == 0)
+		initialize(container);
+
+	else if (type == 1)
+	{
+		shared_ptr<Operation> op = make_shared<Operation>("whole", container, (Sequential(container)).ptr(), true);
+		addOperation(op);
+	}
+}
+
 void MyContainer::setFrequency(int frequency)
 {
 	this->frequency = frequency;
@@ -60,12 +74,17 @@ void MyContainer::updateExecutionTime()
 	if (tracker.records.size() == 0)
 		return;
 
+	wret = 0;
+
 	for (auto op : operations)
 	{
 		auto record = tracker.records.rbegin();
 		int count = min(ModuleTracker::windowSize, (int)tracker.records.size());
+		auto oldWret = op->wret;
 		op->wret = 0;
 
+		// if (Scheduler::isWretUsed)
+		// {
 		while (count--)
 		{
 			if ((*record)->accepted && (*record)->operations[op->id]->executionTime > op->wret)
@@ -73,11 +92,19 @@ void MyContainer::updateExecutionTime()
 
 			record++;
 		}
+		// }
+
+		// else
+		// 	op->wret = op->wcet;
+
+		if (op->wret == 0)
+			op->wret = oldWret;
 
 		currentRecord->setOperationWret(op.get(), op->wret);
+		wret += op->wret;
 	}
 
-	assignExecutionTime();
+	currentRecord->wret = wret;
 }
 
 void MyContainer::updateUtilization()
@@ -115,7 +142,7 @@ void MyContainer::runDummy()
 	auto str = currentContext->getStream();
 	str->select();
 
-	auto input = torch::randn({ 1, 3, inputSize, inputSize }).cuda();
+	auto input = torch::randn({ batchSize, 3, inputSize, inputSize }).cuda();
 	auto output = forwardDummy(input, str);
 	str->release();
 	isDummy = false;
@@ -134,7 +161,7 @@ void MyContainer::waitDummy()
 
 void MyContainer::analyzeOperations(int warmup, int repeat, bool isWcet)
 {
-	auto input = torch::randn({ 1, 3, inputSize, inputSize }).cuda();
+	auto input = torch::randn({ batchSize, 3, inputSize, inputSize }).cuda();
 	int timer;
 
 	for (auto op : operations)
@@ -194,7 +221,7 @@ Tensor MyContainer::forwardDummy(Tensor input, MyStream* str)
 {
 	for (auto op : operations)
 	{
-		input = op->sequential->forward(input);
+		input = op->forward(input);
 		str->synchronize();
 	}
 
@@ -219,12 +246,12 @@ int MyContainer::admissionTest()
 	if (highPriority)
 		return 100;
 
-	else if (_iterationCount > ModuleTracker::windowSize && acceptanceRate < (Scheduler::acceptanceRate * 0.5))
+	else if (false)//_iterationCount > ModuleTracker::windowSize && acceptanceRate <= (Scheduler::acceptanceRate * 0.5))
 	{
 		for (int i = 0; i < Scheduler::contextCount; i++)
 		{
-			if ((Scheduler::contextPool[i].activeUtilization < minUtilization) &&
-				(Scheduler::contextPool[i].overallUtilization < (currentContext->overallUtilization - utilizationPartitioned * 0.99)))
+			if ((Scheduler::contextPool[i].activeUtilization < minUtilization) && (currentContext != &Scheduler::contextPool[i] &&
+				(Scheduler::contextPool[i].overallUtilization <= (currentContext->overallUtilization - utilizationPartitioned))))
 			{
 				minUtilization = Scheduler::contextPool[i].activeUtilization;
 				context = &Scheduler::contextPool[i];
@@ -234,16 +261,19 @@ int MyContainer::admissionTest()
 		if (context == nullptr)
 			return -10;
 
-		// if ((minUtilization + utilizationPartitioned) < 1.1)
+		if ((minUtilization + utilizationPartitioned) < 1.2)
 		{
-			cout << "Dontainer " << moduleName << " moved from " << currentContext->index << " to " << context->index << endl
-				<< "\tMod Utilization: " << utilizationPartitioned << endl
-				<< "\tOld Utilization: " << currentContext->activeUtilization << endl
-				<< "\tNew Utilization: " << context->activeUtilization << endl;
+			// cout << "Dontainer " << moduleName << " moved from " << currentContext->index << " to " << context->index << endl
+			// 	<< "\tMod Utilization: " << utilizationPartitioned << endl
+			// 	<< "\tOld Utilization: " << currentContext->activeUtilization << endl
+			// 	<< "\tNew Utilization: " << context->activeUtilization << endl;
 
-			currentContext->removeModule(operations[0]->container);
-			currentContext = context;
-			currentContext->assignModule(operations[0]->container);
+			if (currentContext != context)
+			{
+				currentContext->removeModule(operations[0]->container);
+				currentContext = context;
+				currentContext->assignModule(operations[0]->container);
+			}
 
 			return 10;
 		}
@@ -251,8 +281,8 @@ int MyContainer::admissionTest()
 		return -20;
 	}
 
-	if (!isFair())
-		return -1;
+	// if (!isFair())
+	// 	return -1;
 
 	if (doesMeetDeadline())
 		return 1;
@@ -275,10 +305,10 @@ int MyContainer::admissionTest()
 
 	if ((minUtilization + utilizationPartitioned) < 1.0)
 	{
-		cout << "Eontainer " << moduleName << " moved from " << currentContext->index << " to " << context->index << endl
-			<< "\tMod Utilization: " << utilizationPartitioned << endl
-			<< "\tOld Utilization: " << currentContext->activeUtilization << endl
-			<< "\tNew Utilization: " << context->activeUtilization << endl;
+		// cout << "Eontainer " << moduleName << " moved from " << currentContext->index << " to " << context->index << endl
+		// 	<< "\tMod Utilization: " << utilizationPartitioned << endl
+		// 	<< "\tOld Utilization: " << currentContext->activeUtilization << endl
+		// 	<< "\tNew Utilization: " << context->activeUtilization << endl;
 
 		currentContext->removeModule(operations[0]->container);
 		currentContext = context;
@@ -345,6 +375,7 @@ bool MyContainer::release(Tensor input)
 		// 	<< "\tContext Utilization: " << currentContext->activeUtilization << endl;
 		auto record = make_shared<ModuleTrackingRecord>(this, false);
 		tracker.addRecord(record);
+
 		return false;
 	}
 

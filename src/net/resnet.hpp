@@ -76,7 +76,8 @@ struct BottleneckBlock : Module
 		x = relu(_bn2(_conv2(x)));
 		x = _bn3(_conv3(x));
 
-		if (!_downsample.is_empty())
+		// if (!_downsample.is_empty())
+		if (x.sizes()[1] != residual.sizes()[1])
 			residual = _downsample->forward(residual);
 
 		x += residual;
@@ -123,7 +124,7 @@ public:
 			MaxPool2d(MaxPool2dOptions(3).stride(2).padding(1))
 		);
 
-		make_layer(layer1, layer_sizes[0], block_type, num_blocks[0]);
+		make_layer(layer1, layer_sizes[0], block_type, num_blocks[0], 1, true);
 		_layer1 = register_module("layer1", layer1);
 
 		auto layer2 = Sequential();
@@ -141,12 +142,12 @@ public:
 	}
 
 private:
-	Sequential make_layer(Sequential& layer, int64_t channels, int block_type, int num_blocks, int64_t stride = 1)
+	Sequential make_layer(Sequential& layer, int64_t channels, int block_type, int num_blocks, int64_t stride = 1, bool first = false)
 	{
 		auto downsample = Sequential{ nullptr };
-		int64_t in_channels = channels == 64 ? 64 : channels / 2;
+		int64_t in_channels = first ? 64 : channels / 2;
 
-		if (stride != 1 || in_channels != channels)
+		if (stride != 1 || !first || block_type >= 50)
 			downsample = Sequential(
 				Conv2d(Conv2dOptions(in_channels, channels, 1).stride(stride).bias(false)),
 				BatchNorm2d(channels)
@@ -184,7 +185,8 @@ public:
 		return x;
 	}
 
-	void initialize(shared_ptr<MyContainer> module, string name, bool highPriority) override;
+	void initialize(shared_ptr<MyContainer> module) override;
 };
 
 shared_ptr<ResNet> resnet18(int numClasses);
+shared_ptr<ResNet> resnet50(int numClasses);

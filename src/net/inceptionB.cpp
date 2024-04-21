@@ -5,17 +5,36 @@ using namespace FGPRS;
 using namespace torch;
 using namespace nn;
 
-void InceptionBImpl::initialize(shared_ptr<MyContainer> module, string name, bool highPriority)
+Tensor InceptionB::forwardNL(Tensor input, MyContext* ctx, MyStream* mainStream)
 {
-	moduleName = name;
-	this->highPriority = highPriority;
+	// future th3x3 = async(launch::async, [&](MyStream* str)
+	// 	{
+	// 		str->context->select();
+	// 		str->select();
+	Tensor branch3x3 = this->branch3x3->forward(input);
+	// 	str->release();
+	// 	return branch3x3;
+	// }, ctx->getSecondaryStream(mainStream));
 
-	_oBranch3x3 = make_shared<Operation>("branch3x3", module, (Sequential(branch3x3)).ptr(), false);
-	_oBranch3x3dbl = make_shared<Operation>("branch3x3dbl", module,
-		(Sequential(branch3x3dbl_1, branch3x3dbl_2)).ptr(), false);
-	_oBranchPool = make_shared<Operation>("branchPool", module, (Sequential(branch_pool)).ptr(), false);
+	future th3x3dbl = async(launch::async, [&](MyStream* str)
+		{
+			str->context->select();
+			str->select();
+			Tensor branch3x3dbl = this->branch3x3dbl_1->forward(input);
+			branch3x3dbl = this->branch3x3dbl_2->forward(branch3x3dbl);
+			branch3x3dbl = this->branch3x3dbl_3->forward(branch3x3dbl);
+			str->release();
+			return branch3x3dbl;
+		}, ctx->getSecondaryStream(mainStream));
 
-	addOperation(_oBranch3x3);
-	addOperation(_oBranch3x3dbl);
-	addOperation(_oBranchPool);
+	// future thpool = async(launch::async, [&](MyStream* str)
+	// 	{
+	// 		str->context->select();
+	// 		str->select();
+	Tensor branch_pool = this->branch_pool->forward(input);
+	// 	str->release();
+	// 	return branch_pool;
+	// }, ctx->getSecondaryStream(mainStream));
+
+	return cat({ branch3x3, th3x3dbl.get(), branch_pool }, 1);
 }

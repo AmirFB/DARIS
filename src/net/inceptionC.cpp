@@ -5,20 +5,50 @@ using namespace FGPRS;
 using namespace torch;
 using namespace nn;
 
-void InceptionCImpl::initialize(shared_ptr<MyContainer> module, string name, bool highPriority)
+Tensor InceptionC::forwardNL(Tensor input, MyContext* ctx, MyStream* mainStream)
 {
-	moduleName = name;
-	this->highPriority = highPriority;
+	// future<Tensor> th1x1 = async(launch::async, [&](MyStream* str)
+	// 	{
+	// 		str->context->select();
+	// 		str->select();
+	Tensor branch1x1 = this->branch1x1->forward(input);
+	// 	str->release();
+	// 	return branch1x1;
+	// }, ctx->getSecondaryStream(mainStream));
 
-	_oBranch1x1 = make_shared<Operation>("branch1x1", module, (Sequential(branch1x1)).ptr(), false);
-	_oBranch7x7 = make_shared<Operation>("branch7x7", module,
-		(Sequential(branch7x7_1, branch7x7_2, branch7x7_2)).ptr(), false);
-	_oBranch7x7dbl = make_shared<Operation>("branch7x7dbl", module,
-		(Sequential(branch7x7dbl_1, branch7x7dbl_2, branch7x7dbl_3, branch7x7dbl_4, branch7x7dbl_5)).ptr(), false);
-	_oBranchPool = make_shared<Operation>("branchPool", module, (Sequential(branch_pool_1, branch_pool_2)).ptr(), false);
+	future<Tensor> th7x7 = async(launch::async, [&](MyStream* str)
+		{
+			str->context->select();
+			str->select();
+			Tensor branch7x7 = this->branch7x7_1->forward(input);
+			branch7x7 = this->branch7x7_2->forward(branch7x7);
+			branch7x7 = this->branch7x7_3->forward(branch7x7);
+			str->release();
+			return branch7x7;
+		}, ctx->getSecondaryStream(mainStream));
 
-	addOperation(_oBranch1x1);
-	addOperation(_oBranch7x7);
-	addOperation(_oBranch7x7dbl);
-	addOperation(_oBranchPool);
+	future<Tensor> th7x7dbl = async(launch::async, [&](MyStream* str)
+		{
+			str->context->select();
+			str->select();
+			Tensor branch7x7dbl = this->branch7x7dbl_1->forward(input);
+			branch7x7dbl = this->branch7x7dbl_2->forward(branch7x7dbl);
+			branch7x7dbl = this->branch7x7dbl_3->forward(branch7x7dbl);
+			branch7x7dbl = this->branch7x7dbl_4->forward(branch7x7dbl);
+			branch7x7dbl = this->branch7x7dbl_5->forward(branch7x7dbl);
+			str->release();
+			return branch7x7dbl;
+		}, ctx->getSecondaryStream(mainStream));
+
+	// future<Tensor> thPool = async(launch::async, [&](MyStream* str)
+	// 	{
+	// 		str->context->select();
+	// 		str->select();
+	Tensor branch_pool = this->branch_pool_1->forward(input);
+	branch_pool = this->branch_pool_2->forward(branch_pool);
+	// 	str->release();
+	// 	return branch_pool;
+	// }, ctx->getSecondaryStream(mainStream));
+
+	return cat({ branch1x1, th7x7.get(), th7x7dbl.get(), branch_pool }, 1);
 }

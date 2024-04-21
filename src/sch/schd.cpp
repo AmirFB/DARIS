@@ -24,6 +24,10 @@ using namespace std;
 using namespace torch;
 using namespace torch::nn;
 
+// bool Scheduler::isLastHigh = true, Scheduler::isStaging = true,
+// Scheduler::isPriorDelayed = true, Scheduler::isFixedPriority = true,
+// Scheduler::isWretUsed = true;
+
 MyContext* Scheduler::contextPool;
 MyContext* Scheduler::_defaultContext;
 
@@ -46,6 +50,8 @@ bool Scheduler::initialize(int contextCount, int smCount)
 	maxSmCount = prop.multiProcessorCount;
 
 	Scheduler::contextCount = contextCount;
+	Scheduler::smCount = smCount;
+
 	contextPool = new MyContext[contextCount + 1];
 
 	contextPool[contextCount] = MyContext(contextCount, maxSmCount, true);
@@ -68,7 +74,6 @@ MyContext* Scheduler::selectContextByIndex(int index)
 
 MyContext* Scheduler::selectDefaultContext()
 {
-	// cout << "Context index: " << contextCount << endl;
 	return &contextPool[contextCount];
 }
 
@@ -148,9 +153,9 @@ void Scheduler::populateModulesByOrder(
 
 	for (int i = 0; i < contextCount; i++)
 	{
-		cout << "Context " << i << " has "
-			<< contextPool[i].highContainers.size() << " high priority modules and "
-			<< contextPool[i].lowContainers.size() << " low priority modules." << endl;
+		// cout << "Context " << i << " has "
+		// 	<< contextPool[i].highContainers.size() << " high priority modules and "
+		// 	<< contextPool[i].lowContainers.size() << " low priority modules." << endl;
 
 		contextPool[i].warmup();
 	}
@@ -185,8 +190,6 @@ void Scheduler::populateModulesByUtilization(
 		chosenContext->select();
 		chosenContext->assignModule(high);
 
-		high->to(kCUDA);
-		high->eval();
 		high->forwardRandom();
 	}
 
@@ -206,16 +209,14 @@ void Scheduler::populateModulesByUtilization(
 		chosenContext->select();
 		chosenContext->assignModule(low);
 
-		low->to(kCUDA);
-		low->eval();
 		low->forwardRandom();
 	}
 
 	for (int i = 0; i < contextCount; i++)
 	{
-		cout << "Context " << i << " has "
-			<< contextPool[i].highContainers.size() << " high priority modules and "
-			<< contextPool[i].lowContainers.size() << " low priority modules." << endl;
+		// cout << "Context " << i << " has "
+		// 	<< contextPool[i].highContainers.size() << " high priority modules and "
+		// 	<< contextPool[i].lowContainers.size() << " low priority modules." << endl;
 
 		contextPool[i].warmup();
 	}

@@ -2,11 +2,8 @@
 
 using namespace FGPRS;
 
-void UNet::initialize(shared_ptr<MyContainer> module, string name, bool highPriority)
+void UNet::initialize(shared_ptr<MyContainer> module)
 {
-	moduleName = name;
-	this->highPriority = highPriority;
-
 	for (int i = 0; i < (levels - 1); i++)
 	{
 		oContracting.push_back(make_shared<Operation>("contracting" + to_string(i), module, contracting[i].ptr(), false));
@@ -34,7 +31,13 @@ void UNet::initialize(shared_ptr<MyContainer> module, string name, bool highPrio
 
 void UNet::analyzeOperations(int warmup, int repeat, bool isWcet)
 {
-	Tensor inputTensor = torch::randn({ 1, 3, inputSize, inputSize }, kCUDA);
+	if (operations.size() == 1)
+	{
+		MyContainer::analyzeOperations(warmup, repeat, isWcet);
+		return;
+	}
+
+	Tensor inputTensor = torch::randn({ batchSize, 3, inputSize, inputSize }, kCUDA);
 	int timer;
 
 	vector<Tensor> contractingTensor(levels - 1);

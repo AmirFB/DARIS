@@ -2,7 +2,6 @@
 
 # include <opr.hpp>
 
-# include <ctxd.hpp>
 # include <schd.hpp>
 
 # include <torch/torch.h>
@@ -23,13 +22,42 @@ using namespace FGPRS;
 
 Operation::Operation(string name, shared_ptr<MyContainer> container, shared_ptr<SequentialImpl> module, bool isLast)
 	: name(name), container(container), fullName(container->moduleName + "->" + name),
-	sequential(module), isLast(isLast), highPriority(container->highPriority)
+	sequential(module), isLast(isLast), highPriority(container->highPriority), _isNL(false), _parallelCount(0)
+{
+}
+
+Operation::Operation(string name, shared_ptr<MyContainer> container, shared_ptr<MyModule> module, bool isLast, int parallelCount)
+	: name(name), container(container), fullName(container->moduleName + "->" + name),
+	module(module), isLast(isLast), highPriority(container->highPriority), _isNL(true), _parallelCount(parallelCount)
 {
 }
 
 void Operation::setAbsoluteDeadline(steady_clock::time_point start)
 {
 	absoluteDeadline = start + microseconds((int)stackedDeadline);
+}
+
+Tensor Operation::forward(Tensor input)
+{
+	if (!_isNL)
+		return sequential->forward(input);
+
+	return module->forward(input);
+}
+
+Tensor Operation::forward(Tensor input, MyContext* ctx, MyStream* str)
+{
+	if (!_isNL)
+		return sequential->forward(input);
+
+	if (!container->highPriority)
+		return module->forward(input);
+
+	ctx->remainingSecondaryStreams -= _parallelCount - 1;
+	auto output = module->forwardNL(input, ctx, str);
+	ctx->remainingSecondaryStreams += _parallelCount - 1;
+
+	return output;
 }
 
 Tensor Operation::analyze(int warmup, int repeat, Tensor input, int* timer)
@@ -40,7 +68,7 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input, int* timer)
 
 	for (int i = 0; i < warmup; i++)
 	{
-		output = sequential->forward(input);
+		output = forward(input);
 		str->synchronize();
 	}
 
@@ -48,7 +76,7 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input, int* timer)
 
 	for (int i = 0; i < repeat; i++)
 	{
-		output = sequential->forward(input);
+		output = forward(input);
 		str->synchronize();
 	}
 
@@ -66,21 +94,25 @@ Tensor Operation::analyze(int warmup, int repeat, Tensor input, int* timer)
 Tensor Operation::releaseSync(Tensor input)
 {
 	auto ctx = container->currentContext;
-
+	// cout << "Acquired " << fullName << endl;
 	ctx->releaseOperation(shared_from_this());
+	// cout << "Streaming " << fullName << endl;
 	auto str = ctx->getStream();
 
 	str->select();
 
-	auto id = nvtxRangeStart(fullName.c_str());
+	// auto id = nvtxRangeStart(fullName.c_str());
 	auto start = steady_clock::now();
-	input = sequential->forward(input);
+	// cout << "Start " << fullName << endl;
+	input = forward(input, ctx, str);
+	// cout << "Forwarded " << fullName << endl;
 	str->release();
+	// cout << "Released " << fullName << endl;
 	ctx->finishOperation(shared_from_this());
 
 	auto end = steady_clock::now();
-	delayed = steady_clock::now() > absoluteDeadline;
-	nvtxRangeEnd(id);
+	delayed = end > absoluteDeadline;
+	// nvtxRangeEnd(id);
 
 	auto timer = duration_cast<microseconds>(end - start).count();
 

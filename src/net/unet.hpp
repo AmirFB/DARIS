@@ -11,7 +11,7 @@ using namespace torch;
 using namespace nn;
 using namespace FGPRS;
 
-struct UNet : MyContainer
+struct UNet : public MyContainer
 {
 private:
 	int levels;
@@ -77,7 +77,7 @@ public:
 		register_module("output", output);
 	}
 
-	Tensor forward(const Tensor& inputTensor)
+	Tensor forward(Tensor inputTensor)
 	{
 		vector<Tensor> contractingTensor(levels - 1);
 		vector<Tensor> downsamplingTensor(levels - 1);
@@ -223,7 +223,7 @@ private:
 		}
 	}
 
-	void initialize(shared_ptr<MyContainer> module, string name, bool highPriority) override;
+	void initialize(shared_ptr<MyContainer> module) override;
 	void analyzeOperations(int warmup, int repeat, bool isWcet) override;
 	Tensor forwardDummy(Tensor input, MyStream* str) override;
 	Tensor releaseOperations(Tensor input) override;

@@ -1,5 +1,6 @@
 # pragma once
 
+# include <cnt.hpp>
 # include <opr.hpp>
 # include <str.hpp>
 
@@ -8,6 +9,9 @@
 # include <iostream>
 # include <deque>
 # include <memory>
+# include <thread>
+# include <condition_variable>
+# include <chrono>
 
 # include <cuda.h>
 # include <cudaTypedefs.h>
@@ -15,9 +19,14 @@
 
 using namespace std;
 using namespace c10::cuda;
+using namespace chrono;
 
 namespace FGPRS
 {
+	class Operation;
+	class MyContainer;
+	class MyStream;
+
 	class MyContext
 	{
 	private:
@@ -29,18 +38,16 @@ namespace FGPRS
 		mutable condition_variable* cv;
 		bool _changed = true;
 		steady_clock::time_point _finishTime;
-		vector<MyStream> _streams;
+		vector<MyStream> _mainStreams, _secondaryStreams;
 		shared_ptr<Operation> _headOperation;
 		int _runningCount = 0;
-		double quota = 0.0;
-		int _streamIndex = 0;
 		bool _stopDummies = false;
 		thread _dummyThread;
 
 	public:
 		vector<shared_ptr<MyContainer>> highContainers, lowContainers, allContainers, dummyContainers;
 		int smCount;
-		static int streamCount;
+		static int mainStreamCount, secondaryStreamCount;
 		int index = -1;
 		vector<shared_ptr<Operation>>
 			highLastDelayed, highLast, highDelayed, highOther,
@@ -49,6 +56,7 @@ namespace FGPRS
 		double highUtilization, activeUtilization, overallUtilization;
 		int missedCount = 0, acceptedCount = 0, skippedCount = 0;
 		double acceptanceRate = 1;
+		int remainingSecondaryStreams = 0;
 
 		MyContext() {}
 		MyContext(int index, int smCount, bool isDefault = false);
@@ -73,5 +81,6 @@ namespace FGPRS
 		void waitDummies();
 
 		MyStream* getStream();
+		MyStream* getSecondaryStream(MyStream* mainStream);
 	};
 }

@@ -105,7 +105,8 @@
 		"__tuple": "cpp",
 		"__memory": "cpp",
 		"charconv": "cpp",
-		"csetjmp": "cpp"
+		"csetjmp": "cpp",
+		"__functional_03": "cpp"
 	},
 	"C_Cpp.dimInactiveRegions": false
 }

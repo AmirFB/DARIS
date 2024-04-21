@@ -29,6 +29,54 @@ export PATH=/usr/local/cuda/:$PATH
 export PATH=/usr/local/cuda/bin:$PATH
 export PATH=/usr/local/cuda/extras/CUPTI/lib64:$PATH
 
-./build/fgprs 1 5 5 20 10 25 1 10000 10
+# ./build/fgprs 2 10
+# ./build/fgprs 2 10
+# ./build/fgprs 2 10
+# ./build/fgprs 2 10
+# ./build/fgprs 2 10
+
+./build/fgprs 1 1 3 3 1 500 5
+
+# for dummy in $(seq 1 1 10)
+# do
+# 	echo "ROUND $dummy"
+
+# 	for ctx in $(seq 1 1 8)
+# 	do
+# 		min=1
+
+# 		if [ "$ctx" == 1 ]; then
+# 			min=2
+# 		fi
+
+# 		limit=$(echo "10 / $ctx" | bc)
+
+# 		if [ "$limit" -gt 5 ]; then
+# 			limit=10
+# 		fi
+
+# 		for str in $(seq $min 1 $limit)
+# 		do
+# 			if [ "$ctx" == 1 ]; then
+# 				os_options=("1")
+				
+# 			elif [ "$ctx" == 2 ]; then
+# 				os_options=("1" "1.5" "2")
+			
+# 			elif [ "$ctx" -gt 2 ]; then
+# 				os_options=("1" "1.5" "2" "$ctx")
+# 			fi
+
+# 			for os in ${os_options[@]}
+# 			do
+# 				for ts in $(seq 3 1 3)
+# 				do
+# 					# echo "Running with $ts $ctx $str $os 5000 3"
+# 					./build/fgprs 1 $ts $ctx $str $os 5000 5
+# 				done
+# 			done
+# 		done
+# 	done
+# done
 
 echo quit | nvidia-cuda-mps-control
