@@ -39,3 +39,8 @@ void MyStream::release()
 		synchronize();
 	}
 }
+
+cudaStream_t MyStream::stream()
+{
+	return _stream->stream();
+}

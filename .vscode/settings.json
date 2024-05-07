@@ -106,7 +106,8 @@
 		"__memory": "cpp",
 		"charconv": "cpp",
 		"csetjmp": "cpp",
-		"__functional_03": "cpp"
+		"__functional_03": "cpp",
+		"sched.h": "c"
 	},
 	"C_Cpp.dimInactiveRegions": false
 }

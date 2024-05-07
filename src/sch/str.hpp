@@ -29,5 +29,6 @@ namespace FGPRS
 		bool select();
 		void synchronize();
 		void release();
+		cudaStream_t stream();
 	};
 }

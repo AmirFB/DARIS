@@ -35,6 +35,14 @@ export PATH=/usr/local/cuda/extras/CUPTI/lib64:$PATH
 # ./build/fgprs 2 10
 # ./build/fgprs 2 10
 
+# export CFLAGS="-I/home/amir/repos/FGPRS/libsmctrl $CFLAGS"
+# export LDFLAGS="-lsmctrl $LDFLAGS"
+# export LDFLAGS="-L/home/amir/repos/FGPRS/libsmctrl -lsmctrl $LDFLAGS"
+
+echo "Exported variables:"
+echo $CFLAGS
+echo $LDFLAGS
+
 ./build/fgprs 1 1 3 3 1 500 5
 
 # for dummy in $(seq 1 1 10)

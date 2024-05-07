@@ -3,6 +3,8 @@
 # include <cuda_profiler_api.h>
 # include <torch/script.h>
 
+# include <libsmctrl.h>
+
 # include "scenario.hpp"
 # include "cnt.hpp"
 # include "schd.hpp"
@@ -27,6 +29,68 @@ Scenario scenario;
 
 int main()
 {
+	MyContext::mainStreamCount = 1;
+	MyContext::secondaryStreamCount = 0;
+	Scheduler::initialize(1, 8);
+
+	auto ctx = Scheduler::selectContextByIndex(0);
+	ctx->select();
+	auto str = ctx->getStream();
+	auto stream = str->stream();
+
+	str->select();
+	torch::Device device(torch::kCUDA);
+
+	// Load the TorchScript model from the ZIP archive with CUDA support
+	std::string model_path = "resnet.zip";
+	torch::jit::script::Module model = torch::jit::load(model_path, device);
+
+	// Optionally, set the model to evaluation mode
+	model.eval();
+
+	// Generate example input data
+	auto inputs = torch::randn({ 4, 3, 224, 224 }).to(device);
+
+	// Perform inference
+	auto output = model.forward({ inputs.to(device) }).toTensor();
+	str->synchronize();
+
+	for (int i = 0; i < 10; i++)
+	{
+		output = model.forward({ inputs }).toTensor();
+		str->synchronize();
+	}
+
+	auto start = chrono::high_resolution_clock::now();
+
+	for (int i = 0; i < 100; i++)
+	{
+		output = model.forward({ inputs }).toTensor();
+		str->synchronize();
+	}
+
+	auto end = chrono::high_resolution_clock::now();
+	auto duration = chrono::duration_cast<chrono::microseconds>(end - start).count();
+
+	cout << "Duration (All): " << duration / 100 << " us" << endl;
+
+	uint64_t mask = 0;
+
+	// libsmctrl_set_global_mask(~0x1ull);
+	libsmctrl_set_stream_mask(stream, ~0x1001ull);
+
+	start = chrono::high_resolution_clock::now();
+
+	for (int i = 0; i < 100; i++)
+	{
+		output = model.forward({ inputs }).toTensor();
+		str->synchronize();
+	}
+
+	end = chrono::high_resolution_clock::now();
+	duration = chrono::duration_cast<chrono::microseconds>(end - start).count();
+
+	cout << "Duration (Masked): " << duration / 100 << " us" << endl;
 
 	return 0;
 }
